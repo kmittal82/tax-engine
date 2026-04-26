@@ -1436,7 +1436,9 @@ function syncDays(side, el) {
   const value = el.value;
   slider.value = value;
   numInput.value = value;
-  document.getElementById('sv-' + side + 'days').textContent = parseInt(value).toLocaleString();
+  const sideAbbrev = side === 'grant' ? 'g' : 'v';
+  const svEl = document.getElementById('sv-' + sideAbbrev + 'days');
+  if (svEl) svEl.textContent = parseInt(value).toLocaleString();
 }
 
 // Render scenario chips
@@ -1654,9 +1656,10 @@ function renderTaxTable(taxResults) {
   for (const r of taxResults) {
     const row = document.createElement('tr');
     row.className = r.scope === 'capital_gain' ? 'future-row' : '';
+    const taxableDisplay = r.allocatedIncome ? r.allocatedIncome.toLocaleString() : r.capitalGain ? r.capitalGain.toLocaleString() : r.fullIncome ? r.fullIncome.toLocaleString() : '—';
     row.innerHTML = `
       <td><span class="juris-pill pill-${r.pillClass}">${r.juris}</span> ${r.label}</td>
-      <td class="right">$${r.allocatedIncome ? r.allocatedIncome.toLocaleString() : r.capitalGain ? r.capitalGain.toLocaleString() : r.fullIncome.toLocaleString()}</td>
+      <td class="right">${taxableDisplay === '—' ? '—' : '$' + taxableDisplay}</td>
       <td class="right">${(r.rate * 100).toFixed(1)}%</td>
       <td class="right">$${r.tax.toLocaleString()}</td>
       <td class="right">${r.credit ? '−$' + r.credit.toLocaleString() : '—'}</td>
