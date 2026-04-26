@@ -1139,7 +1139,7 @@ const CalcEngine = {
 
     for (const scope of scopesForVest) {
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome })) continue;
+        if (!comp.applies({ juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome, sourceStateTax: grantSourceStateTax, sourceForeignIncomeTax: grantForeignIncomeTax })) continue;
         const result = comp.compute({
           juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome,
           sourceStateTax: grantSourceStateTax,
