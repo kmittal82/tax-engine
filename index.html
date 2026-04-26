@@ -783,6 +783,38 @@ const TaxComponentRegistry = [
       taxable: ctx.capitalGain, rate: ctx.inputs.ltcgRate,
       tax: ctx.capitalGain * ctx.inputs.ltcgRate
     })
+  },
+  {
+    id: 'us_amt',
+    label: 'Alternative Minimum Tax (ISO)',
+    pillClass: 'pill-amt',
+    applies: (ctx) => ctx.award.id === 'ISO' && ctx.scope === 'full' && ctx.juris.isUS,
+    compute: (ctx) => {
+      const spread = ctx.fullIncome;
+      const exemption = 137000;
+      const amtBase = Math.max(0, spread - exemption);
+      const amtTax = amtBase * 0.26;
+      const regularTax = ctx.fullIncome * ctx.inputs.fedRate;
+      const netAMT = Math.max(0, amtTax - regularTax);
+      return {
+        label: 'AMT (Alternative Minimum Tax)', juris: 'AMT', pillClass: 'pill-amt',
+        taxable: spread, rate: 0.26, tax: netAMT, credit: 0
+      };
+    }
+  },
+  {
+    id: 'us_fed_foreign_tax_credit',
+    label: 'Federal Foreign Tax Credit',
+    pillClass: 'pill-cap',
+    applies: (ctx) => ctx.scope === 'full' && ctx.juris.isUS && ctx.sourceForeignIncomeTax > 0,
+    compute: (ctx) => {
+      const foreignIncomeTax = ctx.sourceForeignIncomeTax || 0;
+      const credit = Math.min(foreignIncomeTax, ctx.fullIncome * ctx.inputs.fedRate);
+      return {
+        label: 'Federal Foreign Tax Credit', juris: 'FTC', pillClass: 'pill-cap',
+        taxable: 0, rate: 0, tax: 0, credit
+      };
+    }
   }
 ];
 
@@ -1075,38 +1107,59 @@ const CalcEngine = {
     // 5. Run tax components for each jurisdiction
     const taxResults = [];
     const jurisList = [grantJuris, vestJuris];
-    const scopes = ['source', 'resident'];
 
+    // Detect if grant and vest are the same jurisdiction (to avoid double-counting source/resident)
+    const isSameJuris = (grantJuris.isUS && vestJuris.isUS && grantJuris.stateCode === vestJuris.stateCode) ||
+                        (!grantJuris.isUS && !vestJuris.isUS && grantJuris.countryCode === vestJuris.countryCode);
+
+    // Phase A: Compute source taxes first, then capture them for credit calculation
     for (let i = 0; i < jurisList.length; i++) {
       const juris = jurisList[i];
       const allocPct = i === 0 ? allocation.grant : allocation.vest;
       const allocatedIncome = income.ordinaryIncome * allocPct;
 
-      for (const scope of scopes) {
-        for (const comp of TaxComponentRegistry) {
-          if (!comp.applies({ juris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome })) continue;
-          const result = comp.compute({
-            juris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome,
-            sourceStateTax: taxResults.find(r => r.juris === juris.stateCode && r.scope === 'source')?.tax || 0,
-            sourceForeignIncomeTax: taxResults.find(r => r.juris === juris.shortCode && r.scope === 'source' && r.label.includes('Income'))?.tax || 0
-          });
-          taxResults.push({ ...result, scope, allocPct });
-        }
+      for (const comp of TaxComponentRegistry) {
+        if (!comp.applies({ juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome })) continue;
+        const result = comp.compute({
+          juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome,
+          sourceStateTax: 0, sourceForeignIncomeTax: 0
+        });
+        taxResults.push({ ...result, scope: 'source', allocPct });
+      }
+    }
+
+    // Phase B: Compute resident and full scopes for vest jurisdiction only
+    // Pre-capture grant source taxes for credit calculations
+    const grantSourceStateTax = taxResults.find(r => r.juris === grantJuris.stateCode && r.scope === 'source')?.tax || 0;
+    const grantForeignIncomeTax = taxResults.find(r => r.juris === grantJuris.shortCode && r.scope === 'source' && r.label.includes('Income'))?.tax || 0;
+
+    const vestAllocPct = allocation.vest;
+    const vestAllocatedIncome = income.ordinaryIncome * vestAllocPct;
+    const scopesForVest = isSameJuris ? ['resident', 'full'] : ['source', 'resident', 'full'];
+
+    for (const scope of scopesForVest) {
+      for (const comp of TaxComponentRegistry) {
+        if (!comp.applies({ juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome })) continue;
+        const result = comp.compute({
+          juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome,
+          sourceStateTax: grantSourceStateTax,
+          sourceForeignIncomeTax: grantForeignIncomeTax
+        });
+        taxResults.push({ ...result, scope, allocPct: vestAllocPct });
       }
     }
 
     // 6. Handle capital gains (e.g., ISO qualifying, ESPP appreciation)
     if (income.capitalGain > 0) {
-      // Capital gains are typically sourced to vest location
-      const vestAlloc = allocation.vest;
-      const allocatedCG = income.capitalGain * vestAlloc;
+      // Capital gains are sourced to vest location (where asset is sold)
+      const allocatedCG = income.capitalGain;
 
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG })) continue;
+        if (!comp.applies({ juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG, sourceForeignIncomeTax: grantForeignIncomeTax })) continue;
         const result = comp.compute({
-          juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG
+          juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG, sourceForeignIncomeTax: grantForeignIncomeTax
         });
-        taxResults.push({ ...result, scope: 'capital_gain', allocPct: vestAlloc });
+        taxResults.push({ ...result, scope: 'capital_gain', allocPct: allocation.vest });
       }
     }
 
@@ -1118,11 +1171,13 @@ const CalcEngine = {
       aggregated[key].tax += r.tax;
       aggregated[key].credit += r.credit || 0;
     }
-    const finalTaxResults = Object.values(aggregated).map(r => ({ ...r, net: r.tax - r.credit }));
+    const finalTaxResults = Object.values(aggregated).map(r => ({
+      ...r, net: Math.round((r.tax - r.credit) * 100) / 100
+    }));
 
-    // 8. Compute totals
-    const totalTax = finalTaxResults.reduce((sum, r) => sum + r.net, 0);
-    const netCash = income.proceeds - totalTax - income.exerciseCost;
+    // 8. Compute totals (with rounding to cents)
+    const totalTax = Math.round(finalTaxResults.reduce((sum, r) => sum + r.net, 0) * 100) / 100;
+    const netCash = Math.round((income.proceeds - totalTax - income.exerciseCost) * 100) / 100;
 
     // 9. Build comparison baselines
     const baselineGrant = this.computeBaseline(inputs, 'grant');
@@ -1312,6 +1367,32 @@ function renderJurisdictionSelectors() {
     grantCountry.innerHTML += `<option value="${code}">${name}</option>`;
     vestCountry.innerHTML += `<option value="${code}">${name}</option>`;
   }
+
+  // Default to a valid starting jurisdiction so results load immediately.
+  grantCountry.value = 'US';
+  vestCountry.value = 'US';
+  populateStateOptions('grant');
+  populateStateOptions('vest');
+  document.getElementById('grant-state').value = 'CA';
+  document.getElementById('vest-state').value = 'CA';
+  updateRateDisplay('grant');
+  updateRateDisplay('vest');
+}
+
+function populateStateOptions(side) {
+  const countryCode = document.getElementById(side + '-country').value;
+  const stateSelect = document.getElementById(side + '-state');
+  stateSelect.innerHTML = '<option value="">Select State/Province</option>';
+
+  if (countryCode === 'US') {
+    const states = Object.keys(JurisdictionRegistry.usStates).sort((a,b) => JurisdictionRegistry.usStates[a].name.localeCompare(JurisdictionRegistry.usStates[b].name));
+    for (const code of states) {
+      const name = JurisdictionRegistry.usStates[code].name;
+      stateSelect.innerHTML += `<option value="${code}">${name}</option>`;
+    }
+  } else {
+    stateSelect.innerHTML += '<option value="">N/A</option>';
+  }
 }
 
 // On country change, populate states
@@ -1450,12 +1531,14 @@ function calc() {
 
   // Update allocation bar
   const alloc = result.allocation;
+  const grantPct = Math.round(alloc.grant * 1000) / 10;  // Round to 1 decimal
+  const vestPct = Math.round(alloc.vest * 1000) / 10;
   document.getElementById('alloc-bar-grant').style.width = (alloc.grant * 100) + '%';
   document.getElementById('alloc-bar-vest').style.width = (alloc.vest * 100) + '%';
-  document.getElementById('alloc-pct-grant').textContent = (alloc.grant * 100).toFixed(0) + '%';
-  document.getElementById('alloc-pct-vest').textContent = (alloc.vest * 100).toFixed(0) + '%';
-  document.getElementById('alloc-label-grant').textContent = `Grant: ${(alloc.grant * 100).toFixed(0)}%`;
-  document.getElementById('alloc-label-vest').textContent = `Vest: ${(alloc.vest * 100).toFixed(0)}%`;
+  document.getElementById('alloc-pct-grant').textContent = grantPct + '%';
+  document.getElementById('alloc-pct-vest').textContent = vestPct + '%';
+  document.getElementById('alloc-label-grant').textContent = `Grant: ${grantPct}%`;
+  document.getElementById('alloc-label-vest').textContent = `Vest: ${vestPct}%`;
 
   // Update qualified pills
   updateQualifiedPill('grant', result.grantJuris, result.award);
