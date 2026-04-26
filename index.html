@@ -1179,9 +1179,9 @@ const CalcEngine = {
     const totalTax = Math.round(finalTaxResults.reduce((sum, r) => sum + r.net, 0) * 100) / 100;
     const netCash = Math.round((income.proceeds - totalTax - income.exerciseCost) * 100) / 100;
 
-    // 9. Build comparison baselines
-    const baselineGrant = this.computeBaseline(inputs, 'grant');
-    const baselineVest = this.computeBaseline(inputs, 'vest');
+    // 9. Build comparison baselines (skip if already same location to avoid infinite recursion)
+    const baselineGrant = !isSameJuris ? this.computeBaseline(inputs, 'grant') : { totalTax, netCash };
+    const baselineVest = !isSameJuris ? this.computeBaseline(inputs, 'vest') : { totalTax, netCash };
 
     return {
       award, grantJuris, vestJuris, allocation, income, taxResults: finalTaxResults,
