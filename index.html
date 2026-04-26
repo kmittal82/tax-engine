@@ -1,13 +1,1746 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Central Tax Engine</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Equity Tax Engine — Extensible Multi-Jurisdiction Calculator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0e0e12;
+  --paper: #f5f2eb;
+  --cream: #ede9de;
+  --gold: #c8973a;
+  --gold-light: #e8c97a;
+  --rust: #b84c2f;
+  --teal: #2a6b6e;
+  --teal-light: #3d9295;
+  --muted: #7a776e;
+  --border: #d8d4c8;
+  --fed-color: #b84c2f;
+  --grant-color: #c8973a;
+  --vest-color: #2a6b6e;
+  --net-color: #2d7a45;
+  --indigo: #4a3f8a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--paper); color: var(--ink); font-family: 'Instrument Sans', sans-serif; min-height: 100vh; }
+
+.header { background: var(--ink); padding: 24px 36px 22px; display: flex; align-items: center; gap: 14px; border-bottom: 3px solid var(--gold); }
+.header-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--paper); letter-spacing: -0.5px; }
+.header-sub { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--gold-light); letter-spacing: 2px; text-transform: uppercase; margin-top: 3px; }
+.header-badges { margin-left: auto; display: flex; gap: 6px; }
+.badge { background: var(--gold); color: var(--ink); font-family: 'DM Mono', monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; padding: 4px 9px; border-radius: 2px; }
+.badge.ghost { background: transparent; color: var(--gold); border: 1px solid var(--gold); }
+
+.page { max-width: 1320px; margin: 0 auto; padding: 24px 24px 60px; }
+
+/* Award type selector — dynamically rendered */
+.award-tabs {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  background: white; border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px; margin-bottom: 20px;
+}
+.award-tab {
+  padding: 12px 8px; border-radius: 3px; cursor: pointer; text-align: center;
+  background: transparent; border: none; transition: all 0.15s; font-family: 'Instrument Sans', sans-serif;
+}
+.award-tab:hover { background: var(--cream); }
+.award-tab.active { background: var(--ink); color: var(--paper); }
+.award-tab .at-name { font-family: 'DM Serif Display', serif; font-size: 15px; display: block; }
+.award-tab .at-desc { font-family: 'DM Mono', monospace; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65; margin-top: 3px; }
+
+/* Concept Banner */
+.concept-banner {
+  background: white; border: 1px solid var(--border); border-left: 4px solid var(--gold);
+  border-radius: 4px; padding: 13px 18px; margin-bottom: 20px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+}
+.concept-item { font-size: 11.5px; line-height: 1.5; }
+.concept-item strong { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold); font-family: 'DM Mono', monospace; margin-bottom: 4px; }
+
+.main-grid { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
+
+.panel { background: white; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
+.panel-header { background: var(--cream); border-bottom: 1px solid var(--border); padding: 11px 16px; display: flex; justify-content: space-between; align-items: center; }
+.panel-label { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.panel-title { font-family: 'DM Serif Display', serif; font-size: 15px; color: var(--ink); }
+.panel-body { padding: 16px; }
+
+.field { margin-bottom: 12px; }
+.field label { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+.field label .val-badge { font-family: 'DM Mono', monospace; font-size: 11.5px; color: var(--teal); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.field label .helper { font-size: 9px; text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 400; }
+.field input[type=number], .field input[type=text], .field select { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 3px; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--ink); background: var(--paper); outline: none; transition: border-color 0.15s; }
+.field input:focus, .field select:focus { border-color: var(--teal); background: white; }
+.slider-row { display: flex; align-items: center; gap: 8px; }
+.slider-row input[type=range] { flex: 1; -webkit-appearance: none; height: 4px; background: var(--border); border-radius: 2px; padding: 0; border: none; cursor: pointer; }
+.slider-row input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--teal); cursor: pointer; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.sv { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--teal); min-width: 56px; text-align: right; }
+
+.divider { border: none; border-top: 1px dashed var(--border); margin: 12px 0; }
+.sec-label { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 9px; display: flex; justify-content: space-between; align-items: center; }
+.sec-label .info-tag { font-size: 9px; color: var(--teal); font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+/* Toggles */
+.toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.toggle-btn { padding: 7px; background: var(--cream); border: none; cursor: pointer; font-size: 11px; color: var(--muted); font-family: 'Instrument Sans', sans-serif; transition: all 0.15s; }
+.toggle-btn.active { background: var(--ink); color: var(--paper); }
+
+/* Jurisdiction cards */
+.juris-grid { display: grid; gap: 10px; margin-bottom: 12px; }
+.juris-card { border: 1px solid var(--border); border-radius: 3px; padding: 11px; background: var(--cream); }
+.juris-card.grant { border-top: 3px solid var(--grant-color); }
+.juris-card.vest { border-top: 3px solid var(--vest-color); }
+.juris-tag { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.juris-tag.grant { color: var(--grant-color); }
+.juris-tag.vest { color: var(--vest-color); }
+.juris-tag .rate-pill { background: white; color: var(--ink); padding: 2px 7px; border-radius: 2px; font-size: 10px; }
+.dual-select { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dual-select select { padding: 6px 8px; font-size: 11px; background: white; border: 1px solid var(--border); border-radius: 3px; font-family: 'Instrument Sans', sans-serif; color: var(--ink); cursor: pointer; outline: none; }
+.qualified-plan-pill { display: inline-block; background: var(--net-color); color: white; padding: 1px 6px; border-radius: 2px; font-size: 9px; font-family: 'DM Mono', monospace; margin-top: 5px; letter-spacing: 0.5px; }
+
+.alloc-row { background: var(--cream); border: 1px solid var(--border); border-radius: 3px; padding: 10px 12px; margin-bottom: 12px; }
+.alloc-title { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+.alloc-bar-container { position: relative; height: 22px; border-radius: 3px; overflow: hidden; background: var(--border); margin-bottom: 6px; }
+.alloc-bar-grant { position: absolute; left: 0; top: 0; height: 100%; background: var(--grant-color); transition: width 0.4s ease; display: flex; align-items: center; padding: 0 6px; }
+.alloc-bar-vest { position: absolute; right: 0; top: 0; height: 100%; background: var(--vest-color); transition: width 0.4s ease; display: flex; align-items: center; justify-content: flex-end; padding: 0 6px; }
+.alloc-bar-label { font-family: 'DM Mono', monospace; font-size: 10px; color: white; font-weight: 500; }
+.alloc-meta { display: flex; justify-content: space-between; font-size: 10px; }
+
+/* Timeline */
+.timeline { background: var(--cream); border: 1px solid var(--border); border-radius: 3px; padding: 11px 14px; margin-bottom: 14px; }
+.timeline-title { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; display: flex; justify-content: space-between; }
+.tl-bar { position: relative; height: 4px; background: var(--border); border-radius: 2px; margin: 18px 14px; }
+.tl-event { position: absolute; top: -8px; width: 4px; height: 20px; background: var(--ink); transform: translateX(-50%); border-radius: 1px; }
+.tl-event.taxable { background: var(--rust); width: 6px; box-shadow: 0 0 0 3px rgba(184,76,47,0.15); }
+.tl-event::after { content: ''; position: absolute; top: -7px; left: -4px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 2px solid white; }
+.tl-event.taxable::after { background: var(--rust); }
+.tl-label { position: absolute; font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink); white-space: nowrap; transform: translateX(-50%); }
+.tl-label.top { top: -22px; }
+.tl-label.bot { top: 18px; color: var(--muted); }
+.tl-label.taxable { color: var(--rust); font-weight: 600; }
+
+/* Summary cards */
+.summary-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
+.sc { background: white; padding: 12px 14px; }
+.sc.dark { background: var(--ink); }
+.sc.full { grid-column: 1/-1; }
+.sc-label { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.sc.dark .sc-label { color: rgba(200,151,58,0.7); }
+.sc-val { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--ink); }
+.sc.dark .sc-val { color: var(--gold); font-size: 22px; }
+.sc-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+.sc.dark .sc-sub { color: rgba(255,255,255,0.45); }
+
+/* Tax table */
+.sourcing-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-bottom: 16px; }
+.sourcing-table th { background: var(--ink); color: var(--paper); padding: 8px 9px; text-align: left; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; font-weight: 400; }
+.sourcing-table th.right { text-align: right; }
+.sourcing-table td { padding: 8px 9px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.sourcing-table td.right { text-align: right; font-family: 'DM Mono', monospace; font-size: 11.5px; }
+.sourcing-table tr:nth-child(even) td { background: var(--cream); }
+.sourcing-table tr.total-row td { background: #f0f5f4; font-weight: 600; border-top: 2px solid var(--teal); }
+.sourcing-table tr.net-row td { background: var(--ink); color: var(--gold); font-weight: 600; font-family: 'DM Mono', monospace; }
+.sourcing-table tr.future-row td { background: #fff8e0; color: #6b4500; font-style: italic; border-top: 1px dashed var(--gold); }
+.juris-pill { display: inline-block; padding: 2px 7px; border-radius: 2px; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; }
+.pill-grant { background: #fff3cc; color: #8a6000; }
+.pill-vest { background: #d4edea; color: #1a5050; }
+.pill-fed { background: #fde8e4; color: #8a2010; }
+.pill-fica { background: #ede0f5; color: #5a2a7a; }
+.pill-soc { background: #ffe5d4; color: #8a3a10; }
+.pill-niit { background: #f0e8d4; color: #6a5020; }
+.pill-amt { background: #ffd4d4; color: #8a1010; }
+.pill-cap { background: #d4e8f0; color: #104060; }
+.pill-city { background: #f8e0d4; color: #802040; }
+
+/* Compare grid */
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
+.cg-header { grid-column: 1/-1; background: var(--ink); color: var(--gold); font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 2px; text-transform: uppercase; padding: 8px 12px; }
+.cg-col-header { background: var(--cream); padding: 8px 11px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--border); }
+.cg-col-header.highlight { background: #fff8e0; color: var(--gold); border-bottom-color: var(--gold); }
+.cg-cell { background: white; padding: 8px 11px; border-bottom: 1px solid var(--border); font-size: 11px; }
+.cg-cell .cg-label { color: var(--muted); font-size: 9.5px; margin-bottom: 2px; }
+.cg-cell .cg-val { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--ink); }
+.cg-cell.delta { background: #f8fff8; }
+.cg-cell.delta .cg-val { color: var(--net-color); font-weight: 600; }
+.cg-cell.delta-neg .cg-val { color: var(--rust); }
+.cg-cell.highlight { background: #fffdf5; }
+
+/* Waterfall */
+.wf-row { display: flex; align-items: stretch; margin-bottom: 2px; }
+.wf-label { flex: 1; display: flex; align-items: center; padding: 6px 10px; background: var(--cream); border: 1px solid var(--border); border-right: none; font-size: 11px; }
+.wf-value { width: 130px; display: flex; align-items: center; justify-content: flex-end; padding: 6px 10px; background: white; border: 1px solid var(--border); font-family: 'DM Mono', monospace; font-size: 12px; }
+.wf-row.neg .wf-value { color: var(--rust); }
+.wf-row.pos .wf-value { color: var(--net-color); }
+.wf-row.tot .wf-label { background: var(--ink); color: var(--paper); font-weight: 600; }
+.wf-row.tot .wf-value { background: var(--ink); color: var(--gold); font-weight: 600; border-color: var(--ink); }
+.wf-sep { border: none; border-top: 2px solid var(--ink); margin: 5px 0; }
+
+.rules-box { background: #fffdf5; border: 1px solid #e8c97a; border-radius: 3px; padding: 11px 13px; margin-bottom: 12px; font-size: 11px; line-height: 1.6; color: #5a4800; }
+.rules-box strong { color: var(--ink); font-size: 11.5px; }
+.rules-box ul { padding-left: 16px; margin-top: 4px; }
+.rules-box li { margin-bottom: 3px; }
+
+.alert { border-radius: 3px; padding: 10px 12px; font-size: 11px; line-height: 1.5; margin-bottom: 12px; display: none; }
+.alert.show { display: block; }
+.alert.warn { background: #fff3f0; border: 1px solid #f0a090; color: var(--rust); }
+.alert.info { background: #f0f7ff; border: 1px solid #90b8d0; color: #1a4060; }
+.alert.cross { background: #f5f0ff; border: 1px solid #b8a0e0; color: #4a2a8a; }
+.alert.election { background: #fef3c7; border: 1px solid #d4a847; color: #6b4500; }
+.alert.qualified { background: #e8f4ec; border: 1px solid #2d7a45; color: #1a5530; }
+
+.footnote { font-size: 10.5px; color: var(--muted); line-height: 1.55; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+
+optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: var(--cream); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.chip { padding: 4px 9px; border: 1px solid var(--border); border-radius: 12px; background: white; font-size: 10.5px; cursor: pointer; color: var(--muted); transition: all 0.15s; }
+.chip:hover { border-color: var(--teal); color: var(--teal); }
+.chip.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* Plugin info */
+.plugin-info { background: white; border: 1px solid var(--border); border-radius: 4px; padding: 14px 18px; margin-bottom: 20px; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+.plugin-info code { font-family: 'DM Mono', monospace; font-size: 11px; background: var(--cream); padding: 1px 6px; border-radius: 2px; color: var(--ink); }
+
+@media (max-width: 900px) { .main-grid, .compare-grid, .concept-banner { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-sub">Equity Compensation · Plugin-Based Tax Engine</div>
+    <div class="header-title">Equity Tax Engine v3 — Extensible Calculator</div>
+  </div>
+  <div class="header-badges">
+    <span class="badge ghost" id="badge-awards">— Awards</span>
+    <span class="badge ghost" id="badge-juris">— Juris</span>
+    <span class="badge">Plugin Architecture</span>
+  </div>
+</div>
+
+<div class="page">
+
+  <div id="award-tabs-container" class="award-tabs"></div>
+
+  <div class="concept-banner">
+    <div class="concept-item"><strong>Taxable Event</strong><span id="cb-event">—</span></div>
+    <div class="concept-item"><strong>Sourcing Period</strong><span id="cb-source">—</span></div>
+    <div class="concept-item"><strong>Income Formula</strong><span id="cb-income">—</span></div>
+    <div class="concept-item"><strong>Notes</strong><span id="cb-notes">—</span></div>
+  </div>
+
+  <div class="main-grid">
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-label">Configuration</div>
+            <div class="panel-title" id="config-title">Award & Tax Parameters</div>
+          </div>
+        </div>
+        <div class="panel-body" id="config-body">
+          <!-- Dynamically rendered fields based on selected award -->
+          <div id="award-fields-container"></div>
+
+          <hr class="divider">
+          <div class="sec-label">Quick Cross-Border Scenarios</div>
+          <div class="chip-row" id="scenario-chips"></div>
+
+          <div class="sec-label">
+            <span>Grant & Settlement Locations</span>
+            <span class="info-tag" id="loc-info">Workday Sourcing</span>
+          </div>
+
+          <div class="juris-grid">
+            <div class="juris-card grant">
+              <div class="juris-tag grant">
+                <span>📍 <span id="grant-loc-label">Grant Location</span></span>
+                <span class="rate-pill" id="grant-rate-display">—</span>
+              </div>
+              <div class="dual-select">
+                <select id="grant-country" onchange="onCountryChange('grant');calc()"></select>
+                <select id="grant-state" onchange="calc()"></select>
+              </div>
+              <div id="grant-qualified-pill"></div>
+            </div>
+
+            <div class="juris-card vest">
+              <div class="juris-tag vest">
+                <span>📍 <span id="vest-loc-label">Vest Location</span></span>
+                <span class="rate-pill" id="vest-rate-display">—</span>
+              </div>
+              <div class="dual-select">
+                <select id="vest-country" onchange="onCountryChange('vest');calc()"></select>
+                <select id="vest-state" onchange="calc()"></select>
+              </div>
+              <div id="vest-qualified-pill"></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label><span id="grant-days-label">Days in Grant Loc.</span> <span class="val-badge" id="sv-gdays">500</span></label>
+            <div class="slider-row">
+              <input type="range" id="grant-days" min="0" max="1500" step="1" value="500" oninput="syncDays('grant',this);calc()">
+              <input type="number" id="grant-days-num" min="0" max="1500" step="1" value="500" oninput="syncDays('grant',this);calc()" style="width:72px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:3px;font-family:'DM Mono',monospace;background:white;color:var(--ink);text-align:center;">
+            </div>
+          </div>
+
+          <div class="field">
+            <label><span id="vest-days-label">Days in Vest Loc.</span> <span class="val-badge" id="sv-vdays">500</span></label>
+            <div class="slider-row">
+              <input type="range" id="vest-days" min="0" max="1500" step="1" value="500" oninput="syncDays('vest',this);calc()">
+              <input type="number" id="vest-days-num" min="0" max="1500" step="1" value="500" oninput="syncDays('vest',this);calc()" style="width:72px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:3px;font-family:'DM Mono',monospace;background:white;color:var(--ink);text-align:center;">
+            </div>
+          </div>
+
+          <div class="alloc-row">
+            <div class="alloc-title">Income Allocation Ratio</div>
+            <div class="alloc-bar-container">
+              <div class="alloc-bar-grant" id="alloc-bar-grant" style="width:50%"><span class="alloc-bar-label" id="alloc-pct-grant">50%</span></div>
+              <div class="alloc-bar-vest" id="alloc-bar-vest" style="width:50%"><span class="alloc-bar-label" id="alloc-pct-vest">50%</span></div>
+            </div>
+            <div class="alloc-meta">
+              <span id="alloc-label-grant" style="color:var(--grant-color)">Grant: 50%</span>
+              <span id="alloc-label-vest" style="color:var(--vest-color)">Vest: 50%</span>
+            </div>
+          </div>
+
+          <hr class="divider">
+          <div class="sec-label">Common Tax Parameters</div>
+
+          <div class="field">
+            <label>US Federal Marginal Rate</label>
+            <select id="fed-rate" onchange="calc()">
+              <option value="0.10">10%</option><option value="0.12">12%</option>
+              <option value="0.22">22%</option><option value="0.24" selected>24%</option>
+              <option value="0.32">32%</option><option value="0.35">35%</option>
+              <option value="0.37">37%</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>FICA / Medicare</label>
+            <select id="fica-rate" onchange="calc()">
+              <option value="0">0% — Not applicable</option>
+              <option value="0.0145" selected>1.45% Medicare only</option>
+              <option value="0.0235">2.35% Addl. Medicare</option>
+              <option value="0.0765">7.65% Full FICA</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Federal LTCG Rate <span class="helper">(for capital gains tax)</span></label>
+            <select id="ltcg-rate" onchange="calc()">
+              <option value="0">0%</option>
+              <option value="0.15" selected>15%</option>
+              <option value="0.20">20%</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>NIIT (Net Investment Income) <span class="helper">(3.8% above threshold)</span></label>
+            <select id="niit-toggle" onchange="calc()">
+              <option value="0" selected>Not applicable</option>
+              <option value="0.038">Apply 3.8% on capital gains</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>City / Local Tax (NYC, Yonkers, Phila)</label>
+            <select id="city-rate" onchange="calc()">
+              <option value="0" selected>None</option>
+              <option value="0.03876">NYC (3.876%)</option>
+              <option value="0.03762">Philadelphia Wage (3.76%)</option>
+              <option value="0.01477">Yonkers Resident (1.48%)</option>
+              <option value="0.025">Other (2.5%)</option>
+            </select>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-label">Results</div>
+            <div class="panel-title" id="results-title">Multi-Jurisdiction Tax Summary</div>
+          </div>
+        </div>
+        <div class="panel-body">
+
+          <div class="timeline">
+            <div class="timeline-title">
+              <span>Award Lifecycle Timeline</span>
+              <span style="color:var(--rust)">⚡ = Taxable Event</span>
+            </div>
+            <div class="tl-bar" id="timeline-bar"></div>
+          </div>
+
+          <div class="summary-cards" id="summary-cards-container"></div>
+
+          <div class="rules-box">
+            <strong>Sourcing Logic Applied:</strong>
+            <ul id="rules-list"><li>Loading...</li></ul>
+          </div>
+
+          <div class="alert election" id="election-alert">
+            <strong>📋 Section 83(b) Election:</strong> Income recognized at grant date. Future appreciation = capital gains.
+          </div>
+          <div class="alert qualified" id="qualified-alert">
+            <strong>✅ Qualified Plan Detected:</strong> <span id="qualified-text"></span>
+          </div>
+          <div class="alert cross" id="cross-border-alert">
+            <strong>🌍 Cross-Border Detected:</strong> <span id="cross-text"></span>
+          </div>
+          <div class="alert warn" id="amt-alert">
+            <strong>⚠️ AMT Preference:</strong> The bargain element (<span id="amt-spread">—</span>) is an AMT preference item.
+          </div>
+          <div class="alert info" id="double-tax-alert">
+            <strong>ℹ️ Double-Taxation Risk:</strong> Limited treaty relief available between these jurisdictions.
+          </div>
+
+          <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Tax Sourcing Breakdown</div>
+          <table class="sourcing-table">
+            <thead>
+              <tr>
+                <th>Component</th><th>Jurisdiction</th>
+                <th class="right">Taxable</th><th class="right">Rate</th>
+                <th class="right">Gross</th><th class="right">Credit</th>
+                <th class="right">Net</th>
+              </tr>
+            </thead>
+            <tbody id="tax-tbody"></tbody>
+          </table>
+
+          <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Cash Flow Waterfall</div>
+          <div id="waterfall-container"></div>
+
+          <div style="font-family:'DM Serif Display',serif;font-size:15px;margin:18px 0 8px">Impact vs. Same-Location Baseline</div>
+          <div class="compare-grid">
+            <div class="cg-header">Side-by-Side — How does relocation affect taxes?</div>
+            <div class="cg-col-header">Stayed in Grant Loc.</div>
+            <div class="cg-col-header highlight">Your Scenario</div>
+            <div class="cg-col-header">Stayed in Vest Loc.</div>
+            <div class="cg-cell"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-stayed-grant-tax">—</div></div>
+            <div class="cg-cell highlight"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-actual-tax">—</div></div>
+            <div class="cg-cell"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-stayed-vest-tax">—</div></div>
+            <div class="cg-cell"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-stayed-grant-net">—</div></div>
+            <div class="cg-cell highlight"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-actual-net">—</div></div>
+            <div class="cg-cell"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-stayed-vest-net">—</div></div>
+            <div class="cg-cell delta" id="cmp-delta-grant-cell"><div class="cg-label">vs. Your Scenario</div><div class="cg-val" id="cmp-delta-grant">—</div></div>
+            <div class="cg-cell highlight"><div class="cg-label">Your Scenario</div><div class="cg-val" style="color:var(--gold)">↑ Baseline</div></div>
+            <div class="cg-cell delta" id="cmp-delta-vest-cell"><div class="cg-label">vs. Your Scenario</div><div class="cg-val" id="cmp-delta-vest">—</div></div>
+          </div>
+
+          <div class="footnote">
+            <strong>Engine v3 — Plugin Architecture:</strong> Awards, jurisdictions, tax components, and sourcing strategies are registered via JS objects. To add a new award type, push to <code>AwardRegistry</code>; to add a new country, push to <code>JurisdictionRegistry</code>; to add a tax component, push to <code>TaxComponentRegistry</code>; to add a sourcing strategy, push to <code>SourcingStrategyRegistry</code>. See inline JS comments. Rates reflect 2025 top marginal data. Illustrative only — not tax advice.
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* =================================================================
+   EQUITY TAX ENGINE v3 — PLUGIN ARCHITECTURE
+   =================================================================
+
+   Four registries make this calculator extensible:
+
+   1. AwardRegistry          → Add new equity award types (PSU, ESPP, SAR, etc.)
+   2. JurisdictionRegistry   → Add new states/countries with tax metadata
+   3. TaxComponentRegistry   → Add new tax types (city tax, NIIT, AMT, etc.)
+   4. SourcingStrategyRegistry → Add new allocation methods (workday, point-in-time, multi-tranche)
+
+   Each registry is a plain object keyed by ID. To add a new entry,
+   just push to the registry — no core code changes required.
+
+   The CalcEngine.compute() function is the orchestrator that:
+   - Looks up the award definition
+   - Computes the taxable income via award.computeIncome(inputs)
+   - Looks up the sourcing strategy and gets allocation map
+   - For each jurisdiction × allocated portion, runs the tax components
+   - Aggregates results, applies foreign tax credits, returns structured output
+   ================================================================= */
+
+// =====================================================
+// 1. JURISDICTION REGISTRY
+// =====================================================
+const JurisdictionRegistry = {
+  // --- US States ---
+  // Each US state extends the base US country profile
+  // Add new state: just add a new key with { name, rate }
+  usStates: {
+    AL:{name:'Alabama',rate:0.0500},  AK:{name:'Alaska',rate:0.0000},
+    AZ:{name:'Arizona',rate:0.0250},  AR:{name:'Arkansas',rate:0.0440},
+    CA:{name:'California',rate:0.1330},CO:{name:'Colorado',rate:0.0440},
+    CT:{name:'Connecticut',rate:0.0699},DE:{name:'Delaware',rate:0.0660},
+    DC:{name:'D.C.',rate:0.1075},     FL:{name:'Florida',rate:0.0000},
+    GA:{name:'Georgia',rate:0.0539},  HI:{name:'Hawaii',rate:0.1100},
+    ID:{name:'Idaho',rate:0.0530},    IL:{name:'Illinois',rate:0.0495},
+    IN:{name:'Indiana',rate:0.0305},  IA:{name:'Iowa',rate:0.0382},
+    KS:{name:'Kansas',rate:0.0558},   KY:{name:'Kentucky',rate:0.0400},
+    LA:{name:'Louisiana',rate:0.0300},ME:{name:'Maine',rate:0.0715},
+    MD:{name:'Maryland',rate:0.0575}, MA:{name:'Massachusetts',rate:0.0900},
+    MI:{name:'Michigan',rate:0.0425}, MN:{name:'Minnesota',rate:0.0985},
+    MS:{name:'Mississippi',rate:0.0440},MO:{name:'Missouri',rate:0.0470},
+    MT:{name:'Montana',rate:0.0590},  NE:{name:'Nebraska',rate:0.0520},
+    NV:{name:'Nevada',rate:0.0000},   NH:{name:'New Hampshire',rate:0.0000},
+    NJ:{name:'New Jersey',rate:0.1075},NM:{name:'New Mexico',rate:0.0590},
+    NY:{name:'New York',rate:0.1090}, NC:{name:'North Carolina',rate:0.0425},
+    ND:{name:'North Dakota',rate:0.0250},OH:{name:'Ohio',rate:0.0350},
+    OK:{name:'Oklahoma',rate:0.0475}, OR:{name:'Oregon',rate:0.0990},
+    PA:{name:'Pennsylvania',rate:0.0307},RI:{name:'Rhode Island',rate:0.0599},
+    SC:{name:'South Carolina',rate:0.0620},SD:{name:'South Dakota',rate:0.0000},
+    TN:{name:'Tennessee',rate:0.0000},TX:{name:'Texas',rate:0.0000},
+    UT:{name:'Utah',rate:0.0455},     VT:{name:'Vermont',rate:0.0875},
+    VA:{name:'Virginia',rate:0.0575}, WA:{name:'Washington',rate:0.0000},
+    WV:{name:'West Virginia',rate:0.0482},WI:{name:'Wisconsin',rate:0.0765},
+    WY:{name:'Wyoming',rate:0.0000},
+  },
+
+  // --- Countries ---
+  // Each country has: incomeRate, socialRate, treatyWithUS, region, qualifiedPlans
+  // qualifiedPlans is an object keyed by award type → reduced effective rate or null
+  // Add new country: just push to this object
+  countries: {
+    US:{name:'United States',region:'na',incomeRate:0.37,socialRate:0.0145,hasIncomeTax:true,treatyWithUS:true,notes:'Federal user-selected; FICA Medicare 1.45%',qualifiedPlans:{}},
+    CA:{name:'Canada',region:'na',incomeRate:0.33,socialRate:0.000,hasIncomeTax:true,treatyWithUS:true,notes:'33% federal + provincial; 50% deduction may apply on qualifying options',qualifiedPlans:{NQ:{rate:0.165,name:'50% deduction (qualified)'}}},
+    UK:{name:'United Kingdom',region:'eu',incomeRate:0.45,socialRate:0.020,hasIncomeTax:true,treatyWithUS:true,notes:'45% income + 2% NIC; EMI/CSOP qualified plans available',qualifiedPlans:{NQ:{rate:0.10,name:'EMI Scheme (BADR rate)'},RSU:null}},
+    IE:{name:'Ireland',region:'eu',incomeRate:0.40,socialRate:0.115,hasIncomeTax:true,treatyWithUS:true,notes:'40% income + USC + PRSI; KEEP scheme offers relief',qualifiedPlans:{NQ:{rate:0.33,name:'KEEP Scheme'}}},
+    DE:{name:'Germany',region:'eu',incomeRate:0.45,socialRate:0.20,hasIncomeTax:true,treatyWithUS:true,notes:'45% income + solidarity + ~20% social (capped); €2,000 ESPP allowance',qualifiedPlans:{ESPP:{rate:0.20,name:'€2,000 tax-free allowance'}}},
+    FR:{name:'France',region:'eu',incomeRate:0.45,socialRate:0.17,hasIncomeTax:true,treatyWithUS:true,notes:'45% income + 17.2% CSG/CRDS; BSPCE for qualifying startups',qualifiedPlans:{NQ:{rate:0.30,name:'BSPCE qualified options'}}},
+    IT:{name:'Italy',region:'eu',incomeRate:0.43,socialRate:0.10,hasIncomeTax:true,treatyWithUS:true,notes:'IRPEF 43% + regional + social',qualifiedPlans:{}},
+    ES:{name:'Spain',region:'eu',incomeRate:0.47,socialRate:0.064,hasIncomeTax:true,treatyWithUS:true,notes:'47% top + 6.4% social (capped)',qualifiedPlans:{}},
+    NL:{name:'Netherlands',region:'eu',incomeRate:0.495,socialRate:0.000,hasIncomeTax:true,treatyWithUS:true,notes:'49.5% top; option taxation deferred to sale (post-2023 reforms)',qualifiedPlans:{NQ:{rate:0.495,name:'Deferred to sale'}}},
+    BE:{name:'Belgium',region:'eu',incomeRate:0.50,socialRate:0.135,hasIncomeTax:true,treatyWithUS:true,notes:'50% income + 13.07% social',qualifiedPlans:{}},
+    CH:{name:'Switzerland',region:'eu',incomeRate:0.40,socialRate:0.063,hasIncomeTax:true,treatyWithUS:true,notes:'~40% federal+cantonal',qualifiedPlans:{}},
+    SE:{name:'Sweden',region:'eu',incomeRate:0.52,socialRate:0.07,hasIncomeTax:true,treatyWithUS:true,notes:'52% combined; Qualified Employee Stock Options (QESO) reduce burden',qualifiedPlans:{NQ:{rate:0.30,name:'QESO reduced'}}},
+    NO:{name:'Norway',region:'eu',incomeRate:0.475,socialRate:0.082,hasIncomeTax:true,treatyWithUS:true,notes:'47.5% top + 8.2% NI',qualifiedPlans:{}},
+    DK:{name:'Denmark',region:'eu',incomeRate:0.55,socialRate:0.080,hasIncomeTax:true,treatyWithUS:true,notes:'55.9% top + 8% AM-bidrag',qualifiedPlans:{}},
+    FI:{name:'Finland',region:'eu',incomeRate:0.51,socialRate:0.075,hasIncomeTax:true,treatyWithUS:true,notes:'51.5% top + ~7.5% social',qualifiedPlans:{}},
+    AT:{name:'Austria',region:'eu',incomeRate:0.55,socialRate:0.18,hasIncomeTax:true,treatyWithUS:true,notes:'55% top + 18% social (capped)',qualifiedPlans:{}},
+    PT:{name:'Portugal',region:'eu',incomeRate:0.48,socialRate:0.11,hasIncomeTax:true,treatyWithUS:true,notes:'48% top + 11% social; NHR regime',qualifiedPlans:{}},
+    PL:{name:'Poland',region:'eu',incomeRate:0.32,socialRate:0.137,hasIncomeTax:true,treatyWithUS:true,notes:'32% top + ~13.7% social',qualifiedPlans:{}},
+    CZ:{name:'Czech Republic',region:'eu',incomeRate:0.23,socialRate:0.110,hasIncomeTax:true,treatyWithUS:true,notes:'23% top + 11% social',qualifiedPlans:{}},
+    EE:{name:'Estonia',region:'eu',incomeRate:0.20,socialRate:0.016,hasIncomeTax:true,treatyWithUS:true,notes:'20% flat; equity-friendly tax regime',qualifiedPlans:{NQ:{rate:0.20,name:'Estonian ESOP (tax-free if held 3+ yrs)'}}},
+    IN:{name:'India',region:'ap',incomeRate:0.30,socialRate:0.000,hasIncomeTax:true,treatyWithUS:true,notes:'30% + surcharge (~37% top) + 4% cess',qualifiedPlans:{}},
+    CN:{name:'China',region:'ap',incomeRate:0.45,socialRate:0.105,hasIncomeTax:true,treatyWithUS:true,notes:'45% top + ~10.5% social',qualifiedPlans:{}},
+    JP:{name:'Japan',region:'ap',incomeRate:0.55,socialRate:0.150,hasIncomeTax:true,treatyWithUS:true,notes:'55% combined + ~15% social',qualifiedPlans:{}},
+    KR:{name:'South Korea',region:'ap',incomeRate:0.495,socialRate:0.090,hasIncomeTax:true,treatyWithUS:true,notes:'49.5% top + ~9% social',qualifiedPlans:{}},
+    SG:{name:'Singapore',region:'ap',incomeRate:0.24,socialRate:0.20,hasIncomeTax:true,treatyWithUS:false,notes:'24% top + CPF 20% (citizen/PR only)',qualifiedPlans:{}},
+    HK:{name:'Hong Kong',region:'ap',incomeRate:0.17,socialRate:0.05,hasIncomeTax:true,treatyWithUS:false,notes:'17% standard + MPF 5%',qualifiedPlans:{}},
+    TW:{name:'Taiwan',region:'ap',incomeRate:0.40,socialRate:0.055,hasIncomeTax:true,treatyWithUS:false,notes:'40% top + ~5.5% social',qualifiedPlans:{}},
+    AU:{name:'Australia',region:'ap',incomeRate:0.45,socialRate:0.020,hasIncomeTax:true,treatyWithUS:true,notes:'45% top + 2% Medicare; ESS deferred taxation possible',qualifiedPlans:{NQ:{rate:0.30,name:'ESS Concessional (startup)'}}},
+    NZ:{name:'New Zealand',region:'ap',incomeRate:0.39,socialRate:0.0153,hasIncomeTax:true,treatyWithUS:true,notes:'39% top + ACC ~1.53%',qualifiedPlans:{}},
+    IL:{name:'Israel',region:'me',incomeRate:0.50,socialRate:0.115,hasIncomeTax:true,treatyWithUS:true,notes:'50% top + 11.5% social; Section 102 plans offer ~25% rate',qualifiedPlans:{NQ:{rate:0.25,name:'Section 102 Capital Track'},RSU:{rate:0.25,name:'Section 102 Capital Track'}}},
+    AE:{name:'United Arab Emirates',region:'me',incomeRate:0.00,socialRate:0.000,hasIncomeTax:false,treatyWithUS:false,notes:'No personal income tax',qualifiedPlans:{}},
+    SA:{name:'Saudi Arabia',region:'me',incomeRate:0.00,socialRate:0.10,hasIncomeTax:false,treatyWithUS:false,notes:'No income tax (non-Saudis)',qualifiedPlans:{}},
+    BH:{name:'Bahrain',region:'me',incomeRate:0.00,socialRate:0.07,hasIncomeTax:false,treatyWithUS:false,notes:'No personal income tax',qualifiedPlans:{}},
+    QA:{name:'Qatar',region:'me',incomeRate:0.00,socialRate:0.05,hasIncomeTax:false,treatyWithUS:false,notes:'No personal income tax',qualifiedPlans:{}},
+    BR:{name:'Brazil',region:'na',incomeRate:0.275,socialRate:0.110,hasIncomeTax:true,treatyWithUS:false,notes:'27.5% top + INSS ~11%',qualifiedPlans:{}},
+    MX:{name:'Mexico',region:'na',incomeRate:0.35,socialRate:0.030,hasIncomeTax:true,treatyWithUS:true,notes:'35% top + IMSS ~3%',qualifiedPlans:{}},
+    AR:{name:'Argentina',region:'na',incomeRate:0.35,socialRate:0.17,hasIncomeTax:true,treatyWithUS:false,notes:'35% top + 17% social',qualifiedPlans:{}},
+    ZA:{name:'South Africa',region:'me',incomeRate:0.45,socialRate:0.020,hasIncomeTax:true,treatyWithUS:true,notes:'45% top + UIF ~1%',qualifiedPlans:{}},
+    TR:{name:'Turkey',region:'me',incomeRate:0.40,socialRate:0.15,hasIncomeTax:true,treatyWithUS:true,notes:'40% top + 15% social (capped)',qualifiedPlans:{}},
+    TH:{name:'Thailand',region:'ap',incomeRate:0.35,socialRate:0.05,hasIncomeTax:true,treatyWithUS:true,notes:'35% top + ~5% social',qualifiedPlans:{}},
+    PH:{name:'Philippines',region:'ap',incomeRate:0.35,socialRate:0.050,hasIncomeTax:true,treatyWithUS:true,notes:'35% top + SSS/PhilHealth ~5%',qualifiedPlans:{}},
+    MY:{name:'Malaysia',region:'ap',incomeRate:0.30,socialRate:0.115,hasIncomeTax:true,treatyWithUS:false,notes:'30% top + EPF 11%',qualifiedPlans:{}},
+    BM:{name:'Bermuda',region:'na',incomeRate:0.00,socialRate:0.075,hasIncomeTax:false,treatyWithUS:false,notes:'No income tax; 7.5% payroll',qualifiedPlans:{}},
+    KY:{name:'Cayman Islands',region:'na',incomeRate:0.00,socialRate:0.000,hasIncomeTax:false,treatyWithUS:false,notes:'No personal income tax',qualifiedPlans:{}},
+  },
+
+  // Resolve a jurisdiction by countryCode + optional stateCode
+  resolve(countryCode, stateCode) {
+    const country = this.countries[countryCode];
+    if (!country) return null;
+    if (countryCode === 'US' && stateCode) {
+      const state = this.usStates[stateCode];
+      return {
+        countryName: country.name, stateName: state ? state.name : '',
+        displayName: state ? `${state.name}, US` : 'US',
+        shortCode: stateCode, countryCode: 'US', stateCode,
+        stateRate: state ? state.rate : 0, countryIncomeRate: 0, socialRate: 0,
+        isUS: true, hasIncomeTax: true, treatyWithUS: true,
+        region: 'na', qualifiedPlans: {},
+        notes: state ? `${state.name} top rate ${(state.rate*100).toFixed(2)}%` : '',
+      };
+    }
+    return {
+      countryName: country.name, stateName: '', displayName: country.name,
+      shortCode: countryCode, countryCode, stateCode: null,
+      stateRate: 0, countryIncomeRate: country.incomeRate, socialRate: country.socialRate,
+      isUS: false, hasIncomeTax: country.hasIncomeTax,
+      treatyWithUS: country.treatyWithUS, region: country.region,
+      qualifiedPlans: country.qualifiedPlans || {}, notes: country.notes,
+    };
+  }
+};
+
+// =====================================================
+// 2. SOURCING STRATEGY REGISTRY
+// =====================================================
+// Each strategy returns: { grant: 0-1, vest: 0-1, special?: object }
+const SourcingStrategyRegistry = {
+  // OECD-standard workday accrual (most common)
+  workday: {
+    name: 'Workday Accrual',
+    description: 'Allocates between jurisdictions based on working days during sourcing period',
+    compute(inputs) {
+      const total = inputs.grantDays + inputs.vestDays || 1;
+      return { grant: inputs.grantDays / total, vest: inputs.vestDays / total };
+    }
+  },
+
+  // 83(b) election: single point at grant
+  pointInTimeGrant: {
+    name: 'Point-in-Time at Grant',
+    description: 'Income recognized entirely at grant date (83(b) election)',
+    compute() { return { grant: 1.0, vest: 0.0 }; }
+  },
+
+  // ESPP: typically sourced to where employee was during contribution period
+  // For simplicity we use workday allocation, but flag as ESPP
+  esppContribution: {
+    name: 'ESPP Contribution Period',
+    description: 'Sources discount and lookback gain to contribution period workdays',
+    compute(inputs) {
+      const total = inputs.grantDays + inputs.vestDays || 1;
+      return { grant: inputs.grantDays / total, vest: inputs.vestDays / total };
+    }
+  },
+
+  // PSU multi-tranche — for now we simplify to grant-to-vest workdays per tranche
+  // but expose as separate strategy so future versions can model tranches
+  multiTrancheVest: {
+    name: 'Multi-Tranche Vest',
+    description: 'Each performance tranche has its own workday window (simplified)',
+    compute(inputs) {
+      const total = inputs.grantDays + inputs.vestDays || 1;
+      return { grant: inputs.grantDays / total, vest: inputs.vestDays / total };
+    }
+  }
+};
+
+// =====================================================
+// 3. TAX COMPONENT REGISTRY
+// =====================================================
+// Each tax component has:
+//   - id, label, pillClass
+//   - applies(ctx) → bool: should this component fire?
+//   - compute(ctx) → { taxable, rate, tax, juris, label }
+//
+// Add a new tax component (e.g., AMT, NIIT, city tax) by pushing here.
+const TaxComponentRegistry = [
+  {
+    id: 'us_federal',
+    label: 'US Federal Income Tax',
+    pillClass: 'pill-fed',
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full',
+    compute: (ctx) => ({
+      label: 'US Federal Income Tax', juris: 'IRS', pillClass: 'pill-fed',
+      taxable: ctx.fullIncome, rate: ctx.inputs.fedRate,
+      tax: ctx.fullIncome * ctx.inputs.fedRate
+    })
+  },
+  {
+    id: 'us_fica',
+    label: 'FICA / Medicare',
+    pillClass: 'pill-fica',
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA && ctx.inputs.ficaRate > 0,
+    compute: (ctx) => ({
+      label: 'FICA / Medicare', juris: 'FED', pillClass: 'pill-fica',
+      taxable: ctx.fullIncome, rate: ctx.inputs.ficaRate,
+      tax: ctx.fullIncome * ctx.inputs.ficaRate
+    })
+  },
+  {
+    id: 'us_state_source',
+    label: 'US Source State Tax',
+    pillClass: 'pill-grant',
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'source' && ctx.juris.stateRate > 0,
+    compute: (ctx) => ({
+      label: `⬆ ${ctx.juris.stateName} State (source)`, juris: ctx.juris.stateCode, pillClass: 'pill-grant',
+      taxable: ctx.allocatedIncome, rate: ctx.juris.stateRate,
+      tax: ctx.allocatedIncome * ctx.juris.stateRate
+    })
+  },
+  {
+    id: 'us_state_resident',
+    label: 'US Resident State Tax',
+    pillClass: 'pill-vest',
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'resident' && ctx.juris.stateRate > 0,
+    compute: (ctx) => {
+      const grossTax = ctx.fullIncome * ctx.juris.stateRate;
+      const sourcedIncome = ctx.fullIncome - ctx.allocatedIncome; // income that came from source state
+      const sourceStateTax = ctx.sourceStateTax || 0;
+      const maxCredit = sourcedIncome * ctx.juris.stateRate;
+      const credit = Math.min(sourceStateTax, maxCredit);
+      return {
+        label: `${ctx.juris.stateName} State (resident)`, juris: ctx.juris.stateCode, pillClass: 'pill-vest',
+        taxable: ctx.fullIncome, rate: ctx.juris.stateRate,
+        tax: grossTax, credit
+      };
+    }
+  },
+  {
+    id: 'foreign_income_source',
+    label: 'Foreign Source Income Tax',
+    pillClass: 'pill-grant',
+    applies: (ctx) => !ctx.juris.isUS && ctx.scope === 'source' && ctx.juris.hasIncomeTax,
+    compute: (ctx) => {
+      // Apply qualified plan rate if applicable
+      const qp = ctx.juris.qualifiedPlans[ctx.award.id];
+      const rate = (qp && qp.rate !== undefined) ? qp.rate : ctx.juris.countryIncomeRate;
+      return {
+        label: `⬆ ${ctx.juris.countryName} Income (source)${qp ? ` — ${qp.name}` : ''}`,
+        juris: ctx.juris.shortCode, pillClass: 'pill-grant',
+        taxable: ctx.allocatedIncome, rate,
+        tax: ctx.allocatedIncome * rate
+      };
+    }
+  },
+  {
+    id: 'foreign_social_source',
+    label: 'Foreign Source Social Charges',
+    pillClass: 'pill-soc',
+    applies: (ctx) => !ctx.juris.isUS && ctx.scope === 'source' && ctx.juris.socialRate > 0,
+    compute: (ctx) => ({
+      label: `⬆ ${ctx.juris.countryName} Social (source)`, juris: ctx.juris.shortCode + '·SOC', pillClass: 'pill-soc',
+      taxable: ctx.allocatedIncome, rate: ctx.juris.socialRate,
+      tax: ctx.allocatedIncome * ctx.juris.socialRate
+    })
+  },
+  {
+    id: 'foreign_income_resident',
+    label: 'Foreign Resident Income Tax',
+    pillClass: 'pill-vest',
+    applies: (ctx) => !ctx.juris.isUS && ctx.scope === 'resident' && ctx.juris.hasIncomeTax,
+    compute: (ctx) => {
+      const qp = ctx.juris.qualifiedPlans[ctx.award.id];
+      const rate = (qp && qp.rate !== undefined) ? qp.rate : ctx.juris.countryIncomeRate;
+      const grossTax = ctx.fullIncome * rate;
+      const sourcedIncome = ctx.fullIncome - ctx.allocatedIncome;
+      const sourceTax = ctx.sourceForeignIncomeTax || 0;
+      const credit = Math.min(sourceTax, sourcedIncome * rate);
+      return {
+        label: `${ctx.juris.countryName} Income (resident)${qp ? ` — ${qp.name}` : ''}`,
+        juris: ctx.juris.shortCode, pillClass: 'pill-vest',
+        taxable: ctx.fullIncome, rate, tax: grossTax, credit
+      };
+    }
+  },
+  {
+    id: 'foreign_social_resident',
+    label: 'Foreign Resident Social',
+    pillClass: 'pill-soc',
+    applies: (ctx) => !ctx.juris.isUS && ctx.scope === 'resident' && ctx.juris.socialRate > 0,
+    compute: (ctx) => ({
+      label: `${ctx.juris.countryName} Social (resident)`, juris: ctx.juris.shortCode + '·SOC', pillClass: 'pill-soc',
+      taxable: ctx.fullIncome, rate: ctx.juris.socialRate,
+      tax: ctx.fullIncome * ctx.juris.socialRate
+    })
+  },
+  {
+    id: 'us_city_tax',
+    label: 'US City / Local Tax',
+    pillClass: 'pill-city',
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full' && ctx.inputs.cityRate > 0,
+    compute: (ctx) => ({
+      label: 'City / Local Tax', juris: 'CITY', pillClass: 'pill-city',
+      taxable: ctx.fullIncome, rate: ctx.inputs.cityRate,
+      tax: ctx.fullIncome * ctx.inputs.cityRate
+    })
+  },
+  // NIIT only fires for capital gains portion (added by award-specific logic)
+  {
+    id: 'niit',
+    label: 'Net Investment Income Tax',
+    pillClass: 'pill-niit',
+    applies: (ctx) => ctx.scope === 'capital_gain' && ctx.inputs.niitRate > 0,
+    compute: (ctx) => ({
+      label: 'NIIT (Net Investment Income)', juris: 'NIIT', pillClass: 'pill-niit',
+      taxable: ctx.capitalGain, rate: ctx.inputs.niitRate,
+      tax: ctx.capitalGain * ctx.inputs.niitRate
+    })
+  },
+  {
+    id: 'us_fed_ltcg',
+    label: 'US Federal LTCG',
+    pillClass: 'pill-cap',
+    applies: (ctx) => ctx.scope === 'capital_gain' && ctx.juris.isUS,
+    compute: (ctx) => ({
+      label: 'US Federal Long-Term Cap Gains', juris: 'LTCG', pillClass: 'pill-cap',
+      taxable: ctx.capitalGain, rate: ctx.inputs.ltcgRate,
+      tax: ctx.capitalGain * ctx.inputs.ltcgRate
+    })
+  }
+];
+
+// =====================================================
+// 4. AWARD REGISTRY
+// =====================================================
+// Each award type defines:
+//   - id, name, shortDesc
+//   - sourcingStrategy: which strategy to use
+//   - skipFICA: bool (ISO doesn't trigger FICA at exercise)
+//   - timeline: array of { pos: 0-100, label, taxable }
+//   - fields: array of input field configs (rendered dynamically in left panel)
+//   - banner: { event, source, income, notes }
+//   - computeIncome(inputs) → { ordinaryIncome, capitalGain, exerciseCost, proceeds, futureGains? }
+//   - extraRules?(inputs, juris) → array of rule strings
+//
+// To add a new award type, push to this object.
+const AwardRegistry = {
+
+  NQ: {
+    id: 'NQ',
+    name: 'NQ Options',
+    shortDesc: 'Non-Qualified',
+    sourcingStrategy: 'workday',
+    skipFICA: false,
+    timeline: [
+      { pos: 0, label: 'Grant', taxable: false },
+      { pos: 50, label: 'Vest', taxable: false },
+      { pos: 100, label: 'Exercise', taxable: true }
+    ],
+    fields: [
+      { id: 'strike', label: 'Strike Price', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
+      { id: 'fmv', label: 'FMV at Exercise', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
+      { id: 'shares', label: 'Shares Exercised', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' }
+    ],
+    locLabels: { grant: 'Grant Location', vest: 'Exercise Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Exercise Loc.' },
+    banner: {
+      event: 'Taxed at exercise. Bargain element (FMV − Strike) is W-2 ordinary income. FICA applies.',
+      source: 'Workday allocation from grant date to exercise date.',
+      income: 'Income = (FMV − Strike) × Shares. Exercise cost = Strike × Shares.',
+      notes: 'No special treatment; fully taxable at ordinary rates.'
+    },
+    summaryCards: ['Exercise Cost', 'Bargain Element'],
+    summaryCardSubs: ['Strike × Shares', 'Ordinary income'],
+    computeIncome(inputs) {
+      const strike = inputs.strike, fmv = inputs.fmv, shares = inputs.shares;
+      const exerciseCost = strike * shares;
+      const proceeds = fmv * shares;
+      const ordinaryIncome = Math.max(0, (fmv - strike) * shares);
+      return { ordinaryIncome, capitalGain: 0, exerciseCost, proceeds };
+    }
+  },
+
+  ISO: {
+    id: 'ISO',
+    name: 'ISO Options',
+    shortDesc: 'Incentive Stock',
+    sourcingStrategy: 'workday',
+    skipFICA: true,
+    timeline: [
+      { pos: 0, label: 'Grant', taxable: false },
+      { pos: 50, label: 'Vest', taxable: false },
+      { pos: 100, label: 'Exercise', taxable: true }
+    ],
+    fields: [
+      { id: 'strike', label: 'Strike Price', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
+      { id: 'fmv', label: 'FMV at Exercise', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
+      { id: 'shares', label: 'Shares Exercised', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' },
+      { id: 'isoDisposition', label: 'Disposition Type', type: 'select', default: 'disqualifying', options: [
+        { value: 'disqualifying', label: 'Disqualifying — same-day sale (ordinary income)' },
+        { value: 'qualifying', label: 'Qualifying — held >2y grant + >1y exercise (LTCG)' }
+      ]}
+    ],
+    locLabels: { grant: 'Grant Location', vest: 'Exercise Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Exercise Loc.' },
+    banner: {
+      event: 'Disqualifying = ordinary income at exercise. Qualifying = LTCG at sale. AMT preference always.',
+      source: 'Workday allocation from grant date to exercise date.',
+      income: 'Income = (FMV − Strike) × Shares. AMT preference even if regular tax = 0.',
+      notes: 'Holding >2y from grant + >1y from exercise converts entire spread to LTCG.'
+    },
+    summaryCards: ['Exercise Cost', 'Spread (AMT Preference)'],
+    summaryCardSubs: ['Strike × Shares', 'Ordinary if disqualifying / LTCG if qualifying'],
+    computeIncome(inputs) {
+      const strike = inputs.strike, fmv = inputs.fmv, shares = inputs.shares;
+      const exerciseCost = strike * shares;
+      const proceeds = fmv * shares;
+      const spread = Math.max(0, (fmv - strike) * shares);
+      if (inputs.isoDisposition === 'qualifying') {
+        // Entire spread is LTCG
+        return { ordinaryIncome: 0, capitalGain: spread, exerciseCost, proceeds };
+      } else {
+        return { ordinaryIncome: spread, capitalGain: 0, exerciseCost, proceeds };
+      }
+    },
+    extraRules(inputs) {
+      if (inputs.isoDisposition === 'qualifying') {
+        return ['ISO qualifying disposition: entire spread treated as long-term capital gain at federal LTCG rate. Most states follow federal treatment.'];
+      }
+      return ['ISO disqualifying disposition: spread treated as ordinary income (same as NQ but no FICA). AMT may still apply for the holding-period spread.'];
+    }
+  },
+
+  RSU: {
+    id: 'RSU',
+    name: 'RSU',
+    shortDesc: 'Restricted Stock Units',
+    sourcingStrategy: 'workday',
+    skipFICA: false,
+    timeline: [
+      { pos: 0, label: 'Grant', taxable: false },
+      { pos: 100, label: 'Vest', taxable: true }
+    ],
+    fields: [
+      { id: 'fmv', label: 'FMV at Vest', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
+      { id: 'shares', label: 'Shares Vesting', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' }
+    ],
+    locLabels: { grant: 'Grant Location', vest: 'Vest Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Vest Loc.' },
+    banner: {
+      event: 'Taxed at vest/settlement on full FMV. No purchase required.',
+      source: 'Workday allocation from grant date to vest date.',
+      income: 'Income = FMV at Vest × Shares. Entire amount is W-2 ordinary income.',
+      notes: 'Most common executive comp award. Share withholding typical for tax payment.'
+    },
+    summaryCards: ['No Exercise Cost', 'Full FMV (Ordinary Income)'],
+    summaryCardSubs: ['RSUs require no purchase', 'Entire FMV is W-2 income'],
+    computeIncome(inputs) {
+      const fmv = inputs.fmv, shares = inputs.shares;
+      const proceeds = fmv * shares;
+      const ordinaryIncome = fmv * shares;
+      return { ordinaryIncome, capitalGain: 0, exerciseCost: 0, proceeds };
+    }
+  },
+
+  RSA: {
+    id: 'RSA',
+    name: 'RSA',
+    shortDesc: 'Restricted Stock Award',
+    sourcingStrategy: 'workday',
+    skipFICA: false,
+    timeline: [
+      { pos: 0, label: 'Grant', taxable: false },
+      { pos: 100, label: 'Vest', taxable: true }
+    ],
+    fields: [
+      { id: 'fmv', label: 'FMV at Vest', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
+      { id: 'fmvGrant', label: 'FMV at Grant', type: 'slider', min: 1, max: 500, step: 1, default: 15, format: 'dollar', dependsOn: { rsaElection: '83b' } },
+      { id: 'amountPaid', label: 'Amount Paid for Shares', type: 'slider', min: 0, max: 50, step: 0.5, default: 0, format: 'dollar' },
+      { id: 'shares', label: 'Shares in Award', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' },
+      { id: 'rsaElection', label: 'Tax Election', type: 'select', default: 'vest', options: [
+        { value: 'vest', label: 'No election — taxed at vest (default)' },
+        { value: '83b', label: 'Section 83(b) — taxed at grant date' }
+      ]}
+    ],
+    locLabels: { grant: 'Grant Location', vest: 'Vest Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Vest Loc.' },
+    banner: {
+      event: 'Taxed at vest by default; 83(b) election shifts to grant.',
+      source: '83(b): single point at grant. Default: workday from grant to vest.',
+      income: 'Income = (FMV − Amount Paid) × Shares at the elected timing.',
+      notes: '83(b) deadline: 30 days from grant. Risk: forfeit = no refund of tax paid.'
+    },
+    summaryCards: ['Amount Paid', 'Taxable Income'],
+    summaryCardSubs: ['Often $0 or par value', 'FMV − amount paid (at elected timing)'],
+    computeIncome(inputs) {
+      const fmv = inputs.fmv, shares = inputs.shares, paid = inputs.amountPaid || 0;
+      const exerciseCost = paid * shares;
+      const proceeds = fmv * shares;
+      let ordinaryIncome;
+      if (inputs.rsaElection === '83b') {
+        ordinaryIncome = Math.max(0, ((inputs.fmvGrant || 0) - paid) * shares);
+      } else {
+        ordinaryIncome = Math.max(0, (fmv - paid) * shares);
+      }
+      return { ordinaryIncome, capitalGain: 0, exerciseCost, proceeds };
+    },
+    // 83(b) overrides sourcing strategy
+    overrideSourcingStrategy(inputs) {
+      return inputs.rsaElection === '83b' ? 'pointInTimeGrant' : null;
+    }
+  },
+
+  PSU: {
+    id: 'PSU',
+    name: 'PSU',
+    shortDesc: 'Performance Stock Units',
+    sourcingStrategy: 'multiTrancheVest',
+    skipFICA: false,
+    timeline: [
+      { pos: 0, label: 'Grant', taxable: false },
+      { pos: 33, label: 'Tranche 1', taxable: true },
+      { pos: 66, label: 'Tranche 2', taxable: true },
+      { pos: 100, label: 'Tranche 3', taxable: true }
+    ],
+    fields: [
+      { id: 'fmv', label: 'FMV at Vest', type: 'slider', min: 1, max: 500, step: 1, default: 60, format: 'dollar' },
+      { id: 'targetShares', label: 'Target Shares', type: 'slider', min: 100, max: 50000, step: 100, default: 3000, format: 'int' },
+      { id: 'performanceMultiplier', label: 'Performance Multiplier', type: 'slider', min: 0, max: 200, step: 5, default: 100, format: 'pct' }
+    ],
+    locLabels: { grant: 'Grant Location', vest: 'Vest Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Vest Loc.' },
+    banner: {
+      event: 'Taxed at each tranche vest based on actual performance multiplier (typically 0%–200%).',
+      source: 'Workday allocation per tranche; this calculator simplifies to single-period blend.',
+      income: 'Income = FMV × Target Shares × Multiplier%. Entire amount ordinary income.',
+      notes: 'Heavy use in executive comp. Real implementations need per-tranche modeling.'
+    },
+    summaryCards: ['Earned Shares', 'Taxable Income'],
+    summaryCardSubs: ['Target × Multiplier', 'FMV × Earned Shares'],
+    computeIncome(inputs) {
+      const fmv = inputs.fmv;
+      const earnedShares = inputs.targetShares * (inputs.performanceMultiplier / 100);
+      const proceeds = fmv * earnedShares;
+      const ordinaryIncome = fmv * earnedShares;
+      return { ordinaryIncome, capitalGain: 0, exerciseCost: 0, proceeds, earnedShares };
+    },
+    extraRules(inputs) {
+      const earned = inputs.targetShares * (inputs.performanceMultiplier / 100);
+      return [`PSU vesting: ${earned.toLocaleString()} shares earned (${inputs.performanceMultiplier}% of target). Each tranche may have different sourcing periods in practice.`];
+    }
+  },
+
+  ESPP: {
+    id: 'ESPP',
+    name: 'ESPP',
+    shortDesc: 'Employee Stock Purchase Plan',
+    sourcingStrategy: 'esppContribution',
+    skipFICA: false,
+    timeline: [
+      { pos: 0, label: 'Offer Period Start', taxable: false },
+      { pos: 50, label: 'Purchase', taxable: false },
+      { pos: 100, label: 'Sale', taxable: true }
+    ],
+    fields: [
+      { id: 'purchasePrice', label: 'Purchase Price', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
+      { id: 'fmvPurchase', label: 'FMV at Purchase', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
+      { id: 'fmvSale', label: 'FMV at Sale', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
+      { id: 'shares', label: 'Shares Purchased', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' }
+    ],
+    locLabels: { grant: 'Offer Period Start', vest: 'Sale Location', grantDays: 'Days in Offer Period', vestDays: 'Days from Purchase to Sale' },
+    banner: {
+      event: 'Taxed at sale on discount + appreciation. US: qualified = LTCG on appreciation.',
+      source: 'US: sourced to offer period workdays. Foreign: varies by country.',
+      income: 'Discount = (FMV at Purchase − Purchase Price) × Shares. Appreciation = (FMV at Sale − FMV at Purchase) × Shares.',
+      notes: 'US qualified plans: discount ordinary, appreciation LTCG. Holding period starts at purchase.'
+    },
+    summaryCards: ['Purchase Cost', 'Discount + Appreciation'],
+    summaryCardSubs: ['Purchase Price × Shares', 'Ordinary + LTCG'],
+    computeIncome(inputs) {
+      const purchasePrice = inputs.purchasePrice, fmvPurchase = inputs.fmvPurchase, fmvSale = inputs.fmvSale, shares = inputs.shares;
+      const exerciseCost = purchasePrice * shares;
+      const proceeds = fmvSale * shares;
+      const discount = Math.max(0, (fmvPurchase - purchasePrice) * shares);
+      const appreciation = Math.max(0, (fmvSale - fmvPurchase) * shares);
+      return { ordinaryIncome: discount, capitalGain: appreciation, exerciseCost, proceeds };
+    },
+    extraRules(inputs, grantJuris, vestJuris) {
+      const rules = [];
+      if (grantJuris.isUS) {
+        rules.push('US ESPP: Qualified if offer period ≤27 months, ≤15% discount. Discount = ordinary income, appreciation = LTCG.');
+      }
+      return rules;
+    }
+  }
+};
+
+// =====================================================
+// CALCULATION ENGINE
+// =====================================================
+const CalcEngine = {
+  compute(inputs) {
+    // 1. Resolve jurisdictions
+    const grantJuris = JurisdictionRegistry.resolve(inputs.grantCountry, inputs.grantState);
+    const vestJuris = JurisdictionRegistry.resolve(inputs.vestCountry, inputs.vestState);
+    if (!grantJuris || !vestJuris) return { error: 'Invalid jurisdiction' };
+
+    // 2. Get award definition
+    const award = AwardRegistry[inputs.awardType];
+    if (!award) return { error: 'Invalid award type' };
+
+    // 3. Compute taxable income
+    const income = award.computeIncome(inputs);
+
+    // 4. Determine sourcing strategy (award may override)
+    let sourcingStrategyId = award.sourcingStrategy;
+    if (award.overrideSourcingStrategy) {
+      const override = award.overrideSourcingStrategy(inputs);
+      if (override) sourcingStrategyId = override;
+    }
+    const sourcingStrategy = SourcingStrategyRegistry[sourcingStrategyId];
+    const allocation = sourcingStrategy.compute(inputs);
+
+    // 5. Run tax components for each jurisdiction
+    const taxResults = [];
+    const jurisList = [grantJuris, vestJuris];
+    const scopes = ['source', 'resident'];
+
+    for (let i = 0; i < jurisList.length; i++) {
+      const juris = jurisList[i];
+      const allocPct = i === 0 ? allocation.grant : allocation.vest;
+      const allocatedIncome = income.ordinaryIncome * allocPct;
+
+      for (const scope of scopes) {
+        for (const comp of TaxComponentRegistry) {
+          if (!comp.applies({ juris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome })) continue;
+          const result = comp.compute({
+            juris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome,
+            sourceStateTax: taxResults.find(r => r.juris === juris.stateCode && r.scope === 'source')?.tax || 0,
+            sourceForeignIncomeTax: taxResults.find(r => r.juris === juris.shortCode && r.scope === 'source' && r.label.includes('Income'))?.tax || 0
+          });
+          taxResults.push({ ...result, scope, allocPct });
+        }
+      }
+    }
+
+    // 6. Handle capital gains (e.g., ISO qualifying, ESPP appreciation)
+    if (income.capitalGain > 0) {
+      // Capital gains are typically sourced to vest location
+      const vestAlloc = allocation.vest;
+      const allocatedCG = income.capitalGain * vestAlloc;
+
+      for (const comp of TaxComponentRegistry) {
+        if (!comp.applies({ juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG })) continue;
+        const result = comp.compute({
+          juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG
+        });
+        taxResults.push({ ...result, scope: 'capital_gain', allocPct: vestAlloc });
+      }
+    }
+
+    // 7. Aggregate and apply credits
+    const aggregated = {};
+    for (const r of taxResults) {
+      const key = r.juris + '|' + r.label;
+      if (!aggregated[key]) aggregated[key] = { ...r, tax: 0, credit: 0 };
+      aggregated[key].tax += r.tax;
+      aggregated[key].credit += r.credit || 0;
+    }
+    const finalTaxResults = Object.values(aggregated).map(r => ({ ...r, net: r.tax - r.credit }));
+
+    // 8. Compute totals
+    const totalTax = finalTaxResults.reduce((sum, r) => sum + r.net, 0);
+    const netCash = income.proceeds - totalTax - income.exerciseCost;
+
+    // 9. Build comparison baselines
+    const baselineGrant = this.computeBaseline(inputs, 'grant');
+    const baselineVest = this.computeBaseline(inputs, 'vest');
+
+    return {
+      award, grantJuris, vestJuris, allocation, income, taxResults: finalTaxResults,
+      totalTax, netCash, baselineGrant, baselineVest,
+      rules: award.extraRules ? award.extraRules(inputs, grantJuris, vestJuris) : []
+    };
+  },
+
+  computeBaseline(inputs, fixedLoc) {
+    const baselineInputs = { ...inputs };
+    if (fixedLoc === 'grant') {
+      baselineInputs.vestCountry = inputs.grantCountry;
+      baselineInputs.vestState = inputs.grantState;
+      baselineInputs.vestDays = inputs.grantDays;
+    } else {
+      baselineInputs.grantCountry = inputs.vestCountry;
+      baselineInputs.grantState = inputs.vestState;
+      baselineInputs.grantDays = inputs.vestDays;
+    }
+    const result = this.compute(baselineInputs);
+    return { totalTax: result.totalTax, netCash: result.netCash };
+  }
+};
+
+// =====================================================
+// UI RENDERING & INTERACTION
+// =====================================================
+
+// Initialize UI
+function init() {
+  renderAwardTabs();
+  renderJurisdictionSelectors();
+  renderScenarioChips();
+  selectAward('NQ');
+  calc();
+}
+
+// Render award type tabs
+function renderAwardTabs() {
+  const container = document.getElementById('award-tabs-container');
+  container.innerHTML = '';
+  for (const [id, award] of Object.entries(AwardRegistry)) {
+    const tab = document.createElement('div');
+    tab.className = 'award-tab';
+    tab.onclick = () => selectAward(id);
+    tab.innerHTML = `
+      <div class="at-name">${award.name}</div>
+      <div class="at-desc">${award.shortDesc}</div>
+    `;
+    container.appendChild(tab);
+  }
+}
+
+// Select award type
+function selectAward(awardId) {
+  const award = AwardRegistry[awardId];
+  document.querySelectorAll('.award-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.award-tab')[Object.keys(AwardRegistry).indexOf(awardId)].classList.add('active');
+
+  // Update labels
+  document.getElementById('grant-loc-label').textContent = award.locLabels.grant;
+  document.getElementById('vest-loc-label').textContent = award.locLabels.vest;
+  document.getElementById('grant-days-label').textContent = award.locLabels.grantDays;
+  document.getElementById('vest-days-label').textContent = award.locLabels.vestDays;
+
+  // Update banner
+  document.getElementById('cb-event').textContent = award.banner.event;
+  document.getElementById('cb-source').textContent = award.banner.source;
+  document.getElementById('cb-income').textContent = award.banner.income;
+  document.getElementById('cb-notes').textContent = award.banner.notes;
+
+  // Render fields
+  renderAwardFields(award);
+
+  // Update badges
+  document.getElementById('badge-awards').textContent = Object.keys(AwardRegistry).length + ' Awards';
+
+  calc();
+}
+
+// Render award-specific fields
+function renderAwardFields(award) {
+  const container = document.getElementById('award-fields-container');
+  container.innerHTML = '';
+
+  for (const field of award.fields) {
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'field';
+
+    const label = document.createElement('label');
+    label.innerHTML = `<span>${field.label}</span> <span class="val-badge" id="sv-${field.id}">—</span>`;
+    fieldDiv.appendChild(label);
+
+    if (field.type === 'slider') {
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.id = field.id;
+      slider.min = field.min;
+      slider.max = field.max;
+      slider.step = field.step;
+      slider.value = field.default;
+      slider.oninput = () => {
+        syncField(field.id, slider.value);
+        calc();
+      };
+      fieldDiv.appendChild(slider);
+
+      const numInput = document.createElement('input');
+      numInput.type = 'number';
+      numInput.id = field.id + '-num';
+      numInput.min = field.min;
+      numInput.max = field.max;
+      numInput.step = field.step;
+      numInput.value = field.default;
+      numInput.oninput = () => {
+        syncField(field.id, numInput.value);
+        calc();
+      };
+      numInput.style.width = '72px';
+      numInput.style.padding = '5px 7px';
+      numInput.style.fontSize = '12px';
+      numInput.style.border = '1px solid var(--border)';
+      numInput.style.borderRadius = '3px';
+      numInput.style.fontFamily = "'DM Mono', monospace";
+      numInput.style.background = 'white';
+      numInput.style.color = 'var(--ink)';
+      numInput.style.textAlign = 'center';
+      fieldDiv.appendChild(numInput);
+    } else if (field.type === 'select') {
+      const select = document.createElement('select');
+      select.id = field.id;
+      select.onchange = calc;
+      for (const opt of field.options) {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        select.appendChild(option);
+      }
+      select.value = field.default;
+      fieldDiv.appendChild(select);
+    }
+
+    container.appendChild(fieldDiv);
+  }
+}
+
+// Sync slider and number input
+function syncField(id, value) {
+  const slider = document.getElementById(id);
+  const numInput = document.getElementById(id + '-num');
+  if (slider) slider.value = value;
+  if (numInput) numInput.value = value;
+  updateBadge(id, value);
+}
+
+// Update value badge
+function updateBadge(id, value) {
+  const badge = document.getElementById('sv-' + id);
+  if (!badge) return;
+  const field = getCurrentAward().fields.find(f => f.id === id);
+  if (field.format === 'dollar') {
+    badge.textContent = '$' + parseFloat(value).toLocaleString();
+  } else if (field.format === 'pct') {
+    badge.textContent = value + '%';
+  } else if (field.format === 'int') {
+    badge.textContent = parseInt(value).toLocaleString();
+  } else {
+    badge.textContent = value;
+  }
+}
+
+// Render jurisdiction selectors
+function renderJurisdictionSelectors() {
+  const countries = Object.keys(JurisdictionRegistry.countries).sort();
+  const grantCountry = document.getElementById('grant-country');
+  const vestCountry = document.getElementById('vest-country');
+
+  grantCountry.innerHTML = '<option value="">Select Country</option>';
+  vestCountry.innerHTML = '<option value="">Select Country</option>';
+
+  for (const code of countries) {
+    const name = JurisdictionRegistry.countries[code].name;
+    grantCountry.innerHTML += `<option value="${code}">${name}</option>`;
+    vestCountry.innerHTML += `<option value="${code}">${name}</option>`;
+  }
+}
+
+// On country change, populate states
+function onCountryChange(side) {
+  const countryCode = document.getElementById(side + '-country').value;
+  const stateSelect = document.getElementById(side + '-state');
+  stateSelect.innerHTML = '<option value="">Select State/Province</option>';
+
+  if (countryCode === 'US') {
+    const states = Object.keys(JurisdictionRegistry.usStates).sort((a,b) => JurisdictionRegistry.usStates[a].name.localeCompare(JurisdictionRegistry.usStates[b].name));
+    for (const code of states) {
+      const name = JurisdictionRegistry.usStates[code].name;
+      stateSelect.innerHTML += `<option value="${code}">${name}</option>`;
+    }
+  } else {
+    stateSelect.innerHTML += '<option value="">N/A</option>';
+  }
+
+  updateRateDisplay(side);
+  calc();
+}
+
+// Update rate display
+function updateRateDisplay(side) {
+  const countryCode = document.getElementById(side + '-country').value;
+  const stateCode = document.getElementById(side + '-state').value;
+  const juris = JurisdictionRegistry.resolve(countryCode, stateCode);
+  const display = document.getElementById(side + '-rate-display');
+  if (juris) {
+    const rate = juris.isUS ? juris.stateRate : juris.countryIncomeRate;
+    display.textContent = rate > 0 ? (rate * 100).toFixed(1) + '%' : '0%';
+  } else {
+    display.textContent = '—';
+  }
+}
+
+// Sync days slider
+function syncDays(side, el) {
+  const slider = document.getElementById(side + '-days');
+  const numInput = document.getElementById(side + '-days-num');
+  const value = el.value;
+  slider.value = value;
+  numInput.value = value;
+  document.getElementById('sv-' + side + 'days').textContent = parseInt(value).toLocaleString();
+}
+
+// Render scenario chips
+function renderScenarioChips() {
+  const container = document.getElementById('scenario-chips');
+  container.innerHTML = '';
+
+  const scenarios = [
+    { name: 'US Domestic', grant: 'US', vest: 'US', grantState: 'CA', vestState: 'CA' },
+    { name: 'Cross-State', grant: 'US', vest: 'US', grantState: 'CA', vestState: 'NY' },
+    { name: 'US to UK', grant: 'US', vest: 'UK', grantState: 'CA' },
+    { name: 'US to Germany', grant: 'US', vest: 'DE', grantState: 'CA' },
+    { name: 'UK to US', grant: 'UK', vest: 'US', vestState: 'CA' },
+    { name: 'EU to EU', grant: 'DE', vest: 'FR' },
+    { name: 'US to Singapore', grant: 'US', vest: 'SG', grantState: 'CA' },
+    { name: 'Remote Worker', grant: 'US', vest: 'US', grantState: 'CA', vestState: 'TX' }
+  ];
+
+  for (const s of scenarios) {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = s.name;
+    chip.onclick = () => applyScenario(s);
+    container.appendChild(chip);
+  }
+}
+
+// Apply scenario
+function applyScenario(s) {
+  document.getElementById('grant-country').value = s.grant;
+  document.getElementById('vest-country').value = s.vest;
+  onCountryChange('grant');
+  onCountryChange('vest');
+  if (s.grantState) {
+    document.getElementById('grant-state').value = s.grantState;
+    updateRateDisplay('grant');
+  }
+  if (s.vestState) {
+    document.getElementById('vest-state').value = s.vestState;
+    updateRateDisplay('vest');
+  }
+  calc();
+}
+
+// Get current award
+function getCurrentAward() {
+  const activeTab = document.querySelector('.award-tab.active');
+  if (!activeTab) return AwardRegistry.NQ;
+  const index = Array.from(document.querySelectorAll('.award-tab')).indexOf(activeTab);
+  const awardId = Object.keys(AwardRegistry)[index];
+  return AwardRegistry[awardId];
+}
+
+// Get inputs
+function getInputs() {
+  const inputs = {
+    awardType: getCurrentAward().id,
+    grantCountry: document.getElementById('grant-country').value,
+    grantState: document.getElementById('grant-state').value,
+    vestCountry: document.getElementById('vest-country').value,
+    vestState: document.getElementById('vest-state').value,
+    grantDays: parseInt(document.getElementById('grant-days').value),
+    vestDays: parseInt(document.getElementById('vest-days').value),
+    fedRate: parseFloat(document.getElementById('fed-rate').value),
+    ficaRate: parseFloat(document.getElementById('fica-rate').value),
+    ltcgRate: parseFloat(document.getElementById('ltcg-rate').value),
+    niitRate: document.getElementById('niit-toggle').value === '0' ? 0 : 0.038,
+    cityRate: parseFloat(document.getElementById('city-rate').value)
+  };
+
+  // Add award-specific fields
+  const award = getCurrentAward();
+  for (const field of award.fields) {
+    if (field.type === 'slider') {
+      inputs[field.id] = parseFloat(document.getElementById(field.id).value);
+    } else if (field.type === 'select') {
+      inputs[field.id] = document.getElementById(field.id).value;
+    }
+  }
+
+  return inputs;
+}
+
+// Calculate and render
+function calc() {
+  const inputs = getInputs();
+  const result = CalcEngine.compute(inputs);
+  if (result.error) {
+    console.error(result.error);
+    return;
+  }
+
+  // Update allocation bar
+  const alloc = result.allocation;
+  document.getElementById('alloc-bar-grant').style.width = (alloc.grant * 100) + '%';
+  document.getElementById('alloc-bar-vest').style.width = (alloc.vest * 100) + '%';
+  document.getElementById('alloc-pct-grant').textContent = (alloc.grant * 100).toFixed(0) + '%';
+  document.getElementById('alloc-pct-vest').textContent = (alloc.vest * 100).toFixed(0) + '%';
+  document.getElementById('alloc-label-grant').textContent = `Grant: ${(alloc.grant * 100).toFixed(0)}%`;
+  document.getElementById('alloc-label-vest').textContent = `Vest: ${(alloc.vest * 100).toFixed(0)}%`;
+
+  // Update qualified pills
+  updateQualifiedPill('grant', result.grantJuris, result.award);
+  updateQualifiedPill('vest', result.vestJuris, result.award);
+
+  // Render timeline
+  renderTimeline(result.award.timeline);
+
+  // Render summary cards
+  renderSummaryCards(result);
+
+  // Render tax table
+  renderTaxTable(result.taxResults);
+
+  // Render waterfall
+  renderWaterfall(result);
+
+  // Update alerts
+  updateAlerts(result);
+
+  // Update comparison
+  updateComparison(result);
+
+  // Update rules
+  updateRules(result.rules);
+}
+
+// Update qualified pill
+function updateQualifiedPill(side, juris, award) {
+  const pill = document.getElementById(side + '-qualified-pill');
+  const qp = juris.qualifiedPlans[award.id];
+  if (qp) {
+    pill.innerHTML = `<div class="qualified-plan-pill">${qp.name}</div>`;
+  } else {
+    pill.innerHTML = '';
+  }
+}
+
+// Render timeline
+function renderTimeline(timeline) {
+  const bar = document.getElementById('timeline-bar');
+  bar.innerHTML = '';
+  for (const event of timeline) {
+    const eventDiv = document.createElement('div');
+    eventDiv.className = 'tl-event' + (event.taxable ? ' taxable' : '');
+    eventDiv.style.left = event.pos + '%';
+    bar.appendChild(eventDiv);
+
+    const label = document.createElement('div');
+    label.className = 'tl-label' + (event.taxable ? ' taxable' : '');
+    label.style.left = event.pos + '%';
+    label.textContent = event.label;
+    bar.appendChild(label);
+  }
+}
+
+// Render summary cards
+function renderSummaryCards(result) {
+  const container = document.getElementById('summary-cards-container');
+  container.innerHTML = '';
+
+  const award = result.award;
+  const income = result.income;
+
+  // Card 1: Exercise Cost
+  const card1 = document.createElement('div');
+  card1.className = 'sc';
+  card1.innerHTML = `
+    <div class="sc-label">${award.summaryCards[0]}</div>
+    <div class="sc-val">$${income.exerciseCost.toLocaleString()}</div>
+    <div class="sc-sub">${award.summaryCardSubs[0]}</div>
+  `;
+  container.appendChild(card1);
+
+  // Card 2: Taxable Income
+  const card2 = document.createElement('div');
+  card2.className = 'sc';
+  card2.innerHTML = `
+    <div class="sc-label">${award.summaryCards[1]}</div>
+    <div class="sc-val">$${(income.ordinaryIncome + income.capitalGain).toLocaleString()}</div>
+    <div class="sc-sub">${award.summaryCardSubs[1]}</div>
+  `;
+  container.appendChild(card2);
+
+  // Card 3: Total Taxes (dark)
+  const card3 = document.createElement('div');
+  card3.className = 'sc dark full';
+  card3.innerHTML = `
+    <div class="sc-label">Total Taxes</div>
+    <div class="sc-val">$${result.totalTax.toLocaleString()}</div>
+    <div class="sc-sub">Across all jurisdictions</div>
+  `;
+  container.appendChild(card3);
+
+  // Card 4: Net Cash
+  const card4 = document.createElement('div');
+  card4.className = 'sc';
+  card4.innerHTML = `
+    <div class="sc-label">Net Cash</div>
+    <div class="sc-val">$${result.netCash.toLocaleString()}</div>
+    <div class="sc-sub">Proceeds − Taxes − Costs</div>
+  `;
+  container.appendChild(card4);
+}
+
+// Render tax table
+function renderTaxTable(taxResults) {
+  const tbody = document.getElementById('tax-tbody');
+  tbody.innerHTML = '';
+
+  for (const r of taxResults) {
+    const row = document.createElement('tr');
+    row.className = r.scope === 'capital_gain' ? 'future-row' : '';
+    row.innerHTML = `
+      <td><span class="juris-pill pill-${r.pillClass}">${r.juris}</span> ${r.label}</td>
+      <td class="right">$${r.allocatedIncome ? r.allocatedIncome.toLocaleString() : r.capitalGain ? r.capitalGain.toLocaleString() : r.fullIncome.toLocaleString()}</td>
+      <td class="right">${(r.rate * 100).toFixed(1)}%</td>
+      <td class="right">$${r.tax.toLocaleString()}</td>
+      <td class="right">${r.credit ? '−$' + r.credit.toLocaleString() : '—'}</td>
+      <td class="right">$${r.net.toLocaleString()}</td>
+    `;
+    tbody.appendChild(row);
+  }
+
+  // Total row
+  const totalRow = document.createElement('tr');
+  totalRow.className = 'total-row';
+  const totalTax = taxResults.reduce((sum, r) => sum + r.net, 0);
+  totalRow.innerHTML = `
+    <td><strong>Total Taxes</strong></td>
+    <td class="right">—</td>
+    <td class="right">—</td>
+    <td class="right">$${totalTax.toLocaleString()}</td>
+    <td class="right">—</td>
+    <td class="right">$${totalTax.toLocaleString()}</td>
+  `;
+  tbody.appendChild(totalRow);
+}
+
+// Render waterfall
+function renderWaterfall(result) {
+  const container = document.getElementById('waterfall-container');
+  container.innerHTML = '';
+
+  const income = result.income;
+  const totalTax = result.totalTax;
+
+  // Proceeds
+  const proceedsRow = document.createElement('div');
+  proceedsRow.className = 'wf-row pos';
+  proceedsRow.innerHTML = `
+    <div class="wf-label">Proceeds from Sale/Exercise</div>
+    <div class="wf-value">$${income.proceeds.toLocaleString()}</div>
+  `;
+  container.appendChild(proceedsRow);
+
+  // Exercise Cost
+  if (income.exerciseCost > 0) {
+    const costRow = document.createElement('div');
+    costRow.className = 'wf-row neg';
+    costRow.innerHTML = `
+      <div class="wf-label">Exercise/Purchase Cost</div>
+      <div class="wf-value">−$${income.exerciseCost.toLocaleString()}</div>
+    `;
+    container.appendChild(costRow);
+  }
+
+  // Taxes
+  const taxRow = document.createElement('div');
+  taxRow.className = 'wf-row neg';
+  taxRow.innerHTML = `
+    <div class="wf-label">Total Taxes</div>
+    <div class="wf-value">−$${totalTax.toLocaleString()}</div>
+  `;
+  container.appendChild(taxRow);
+
+  // Separator
+  const sep = document.createElement('hr');
+  sep.className = 'wf-sep';
+  container.appendChild(sep);
+
+  // Net
+  const netRow = document.createElement('div');
+  netRow.className = 'wf-row tot';
+  netRow.innerHTML = `
+    <div class="wf-label">Net Cash to Employee</div>
+    <div class="wf-value">$${result.netCash.toLocaleString()}</div>
+  `;
+  container.appendChild(netRow);
+}
+
+// Update alerts
+function updateAlerts(result) {
+  // Election alert
+  const electionAlert = document.getElementById('election-alert');
+  const rsaElection = document.getElementById('rsaElection');
+  if (rsaElection && rsaElection.value === '83b') {
+    electionAlert.classList.add('show');
+  } else {
+    electionAlert.classList.remove('show');
+  }
+
+  // Qualified alert
+  const qualifiedAlert = document.getElementById('qualified-alert');
+  const qualifiedText = document.getElementById('qualified-text');
+  let qualified = false;
+  if (result.grantJuris.qualifiedPlans[result.award.id]) {
+    qualifiedText.textContent = result.grantJuris.qualifiedPlans[result.award.id].name;
+    qualified = true;
+  } else if (result.vestJuris.qualifiedPlans[result.award.id]) {
+    qualifiedText.textContent = result.vestJuris.qualifiedPlans[result.award.id].name;
+    qualified = true;
+  }
+  if (qualified) {
+    qualifiedAlert.classList.add('show');
+  } else {
+    qualifiedAlert.classList.remove('show');
+  }
+
+  // Cross-border alert
+  const crossAlert = document.getElementById('cross-border-alert');
+  const crossText = document.getElementById('cross-text');
+  if (result.grantJuris.countryCode !== result.vestJuris.countryCode) {
+    crossText.textContent = `Grant in ${result.grantJuris.displayName}, vest in ${result.vestJuris.displayName}.`;
+    crossAlert.classList.add('show');
+  } else if (result.grantJuris.stateCode !== result.vestJuris.stateCode && result.grantJuris.isUS) {
+    crossText.textContent = `Grant in ${result.grantJuris.displayName}, vest in ${result.vestJuris.displayName}.`;
+    crossAlert.classList.add('show');
+  } else {
+    crossAlert.classList.remove('show');
+  }
+
+  // AMT alert
+  const amtAlert = document.getElementById('amt-alert');
+  const amtSpread = document.getElementById('amt-spread');
+  if (result.award.id === 'ISO') {
+    const spread = result.income.ordinaryIncome + result.income.capitalGain;
+    amtSpread.textContent = '$' + spread.toLocaleString();
+    amtAlert.classList.add('show');
+  } else {
+    amtAlert.classList.remove('show');
+  }
+
+  // Double tax alert
+  const doubleAlert = document.getElementById('double-tax-alert');
+  if (result.grantJuris.countryCode !== result.vestJuris.countryCode && !result.grantJuris.treatyWithUS) {
+    doubleAlert.classList.add('show');
+  } else {
+    doubleAlert.classList.remove('show');
+  }
+}
+
+// Update comparison
+function updateComparison(result) {
+  document.getElementById('cmp-stayed-grant-tax').textContent = '$' + result.baselineGrant.totalTax.toLocaleString();
+  document.getElementById('cmp-actual-tax').textContent = '$' + result.totalTax.toLocaleString();
+  document.getElementById('cmp-stayed-vest-tax').textContent = '$' + result.baselineVest.totalTax.toLocaleString();
+
+  document.getElementById('cmp-stayed-grant-net').textContent = '$' + result.baselineGrant.netCash.toLocaleString();
+  document.getElementById('cmp-actual-net').textContent = '$' + result.netCash.toLocaleString();
+  document.getElementById('cmp-stayed-vest-net').textContent = '$' + result.baselineVest.netCash.toLocaleString();
+
+  const deltaGrant = result.baselineGrant.totalTax - result.totalTax;
+  const deltaVest = result.baselineVest.totalTax - result.totalTax;
+
+  document.getElementById('cmp-delta-grant').textContent = (deltaGrant >= 0 ? '+' : '') + '$' + deltaGrant.toLocaleString();
+  document.getElementById('cmp-delta-grant-cell').className = 'cg-cell delta' + (deltaGrant < 0 ? ' delta-neg' : '');
+  document.getElementById('cmp-delta-vest').textContent = (deltaVest >= 0 ? '+' : '') + '$' + deltaVest.toLocaleString();
+  document.getElementById('cmp-delta-vest-cell').className = 'cg-cell delta' + (deltaVest < 0 ? ' delta-neg' : '');
+}
+
+// Update rules
+function updateRules(rules) {
+  const list = document.getElementById('rules-list');
+  list.innerHTML = '';
+  for (const rule of rules) {
+    const li = document.createElement('li');
+    li.textContent = rule;
+    list.appendChild(li);
+  }
+}
+
+// Initialize on load
+window.onload = init;
+</script>
+</body>
 </html>
+
