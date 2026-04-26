@@ -1523,9 +1523,11 @@ function getInputs() {
 // Calculate and render
 function calc() {
   const inputs = getInputs();
+  console.log('Starting calculation with inputs:', inputs);
   const result = CalcEngine.compute(inputs);
+  console.log('Calculation result:', result);
   if (result.error) {
-    console.error(result.error);
+    console.error('Calculation error:', result.error);
     return;
   }
 
