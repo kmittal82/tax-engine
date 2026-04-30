@@ -110,17 +110,17 @@ body { background: var(--paper); color: var(--ink); font-family: 'Instrument San
 .alloc-meta { display: flex; justify-content: space-between; font-size: 10px; }
 
 /* Timeline */
-.timeline { background: var(--cream); border: 1px solid var(--border); border-radius: 3px; padding: 11px 14px; margin-bottom: 14px; }
-.timeline-title { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; display: flex; justify-content: space-between; }
-.tl-bar { position: relative; height: 4px; background: var(--border); border-radius: 2px; margin: 18px 14px; }
-.tl-event { position: absolute; top: -8px; width: 4px; height: 20px; background: var(--ink); transform: translateX(-50%); border-radius: 1px; }
-.tl-event.taxable { background: var(--rust); width: 6px; box-shadow: 0 0 0 3px rgba(184,76,47,0.15); }
-.tl-event::after { content: ''; position: absolute; top: -7px; left: -4px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 2px solid white; }
+.timeline { background: linear-gradient(to bottom, var(--cream), white); border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+.timeline-title { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+.tl-bar { position: relative; height: 6px; background: var(--border); border-radius: 3px; margin: 28px 0; }
+.tl-event { position: absolute; top: -9px; width: 5px; height: 24px; background: var(--ink); transform: translateX(-50%); border-radius: 2px; transition: transform 0.2s ease; }
+.tl-event.taxable { background: var(--rust); width: 7px; box-shadow: 0 0 0 4px rgba(184,76,47,0.12); }
+.tl-event::after { content: ''; position: absolute; top: -5px; left: -5px; width: 15px; height: 15px; border-radius: 50%; background: var(--ink); border: 2.5px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .tl-event.taxable::after { background: var(--rust); }
-.tl-label { position: absolute; font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink); white-space: nowrap; transform: translateX(-50%); }
-.tl-label.top { top: -22px; }
-.tl-label.bot { top: 18px; color: var(--muted); }
-.tl-label.taxable { color: var(--rust); font-weight: 600; }
+.tl-label { position: absolute; font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink); white-space: nowrap; transform: translateX(-50%); font-weight: 500; }
+.tl-label.top { top: -30px; }
+.tl-label.bot { top: 24px; color: var(--muted); }
+.tl-label.taxable { color: var(--rust); font-weight: 700; }
 
 /* Summary cards */
 .summary-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
@@ -1765,14 +1765,16 @@ function updateQualifiedPill(side, juris, award) {
 function renderTimeline(timeline) {
   const bar = document.getElementById('timeline-bar');
   bar.innerHTML = '';
-  for (const event of timeline) {
+  for (let i = 0; i < timeline.length; i++) {
+    const event = timeline[i];
     const eventDiv = document.createElement('div');
     eventDiv.className = 'tl-event' + (event.taxable ? ' taxable' : '');
     eventDiv.style.left = event.pos + '%';
     bar.appendChild(eventDiv);
 
     const label = document.createElement('div');
-    label.className = 'tl-label' + (event.taxable ? ' taxable' : '');
+    const classes = ['tl-label', i % 2 === 0 ? 'top' : 'bot', event.taxable ? 'taxable' : ''];
+    label.className = classes.filter(Boolean).join(' ');
     label.style.left = event.pos + '%';
     label.textContent = event.label;
     bar.appendChild(label);
