@@ -228,6 +228,24 @@ body.mode-simple .simple-only { display: block; }
 .simple-alloc-bar { height: 8px; border-radius: 4px; display: flex; overflow: hidden; margin-bottom: 6px; }
 .simple-alloc-bar div { transition: width 0.4s ease; flex: 1; }
 .simple-alloc-labels { display: flex; justify-content: space-between; font-size: 11px; font-family: 'DM Mono', monospace; }
+
+/* Bracket visualization */
+.bracket-viz-title { font-family: 'DM Serif Display', serif; font-size: 15px; margin-bottom: 6px; }
+.bracket-bar { height: 28px; display: flex; border-radius: 4px; overflow: hidden; margin: 6px 0 2px; border: 1px solid var(--border); }
+.bracket-band { display: flex; align-items: center; justify-content: center; overflow: hidden; min-width: 2px; transition: flex 0.3s; cursor: default; font-size: 8px; font-family: 'DM Mono', monospace; }
+.bracket-band.ytd { background: rgba(200, 151, 58, 0.35); }
+.bracket-band.exercise { background: rgba(184, 76, 47, 0.75); color: white; }
+.bracket-rate-strip { display: flex; font-size: 9px; font-family: 'DM Mono', monospace; color: var(--muted); margin-bottom: 8px; }
+.bracket-rate-label { text-align: center; flex: 1; overflow: hidden; }
+.bracket-legend { display: flex; gap: 12px; font-size: 10px; font-family: 'DM Mono', monospace; color: var(--muted); margin-top: 2px; }
+.bracket-legend-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 3px; vertical-align: middle; }
+.bracket-marginal { font-family: 'DM Serif Display', serif; font-size: 14px; color: var(--rust); margin-top: 4px; }
+/* Simple mode bracket row */
+.simple-bracket-row { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); }
+.sb-val { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--rust); }
+/* YTD context row */
+.ytd-context-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; padding: 10px 14px; background: var(--cream); border-radius: 4px; font-size: 11px; font-family: 'DM Mono', monospace; color: var(--muted); }
+.ytd-context-row > div > strong { display: block; font-size: 13px; color: var(--ink); margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -387,6 +405,17 @@ body.mode-simple .simple-only { display: block; }
               <option value="0.025">Other (2.5%)</option>
             </select>
           </div>
+
+          <hr class="divider">
+
+          <div class="field">
+            <label>YTD Ordinary Income <span class="helper">(already earned this year)</span></label>
+            <input type="number" id="ytd-income" min="0" step="1000" value="0" oninput="calc()">
+          </div>
+          <div class="field">
+            <label>YTD Taxes Withheld <span class="helper">(W-2 / paystubs)</span></label>
+            <input type="number" id="ytd-tax-paid" min="0" step="100" value="0" oninput="calc()">
+          </div>
           </div>
 
         </div>
@@ -414,6 +443,8 @@ body.mode-simple .simple-only { display: block; }
           </div>
 
           <div class="summary-cards" id="summary-cards-container"></div>
+
+          <div id="bracket-viz-wrap" class="advanced-only" style="margin-bottom:16px"></div>
 
           <div class="rules-box advanced-only">
             <strong>Sourcing Logic Applied:</strong>
@@ -487,6 +518,17 @@ body.mode-simple .simple-only { display: block; }
 
 <script>
 'use strict';
+
+// 2025 Federal tax brackets (single filer)
+const FED_BRACKETS_2025 = [
+  { rate: 0.10,  upTo: 11925 },
+  { rate: 0.12,  upTo: 48475 },
+  { rate: 0.22,  upTo: 103350 },
+  { rate: 0.24,  upTo: 197300 },
+  { rate: 0.32,  upTo: 250525 },
+  { rate: 0.35,  upTo: 626350 },
+  { rate: 0.37,  upTo: Infinity }
+];
 
 /* =================================================================
    EQUITY TAX ENGINE v3 — PLUGIN ARCHITECTURE
@@ -1276,10 +1318,28 @@ function renderSimpleSummary(result) {
   const el = document.getElementById('simple-summary');
   if (!el) return;
 
+  const inputs = getInputs();
+  const ytdIncome = inputs.ytdIncome || 0;
+  const ytdTaxPaid = inputs.ytdTaxPaid || 0;
+
   const totalIncome = result.income.ordinaryIncome + result.income.capitalGain;
-  const effectiveRate = totalIncome > 0 ? ((result.totalTax / totalIncome) * 100).toFixed(1) : 0;
   const grantPct = Math.round(result.allocation.grant * 1000) / 10;
   const vestPct = Math.round(result.allocation.vest * 1000) / 10;
+
+  // Calculate tax subtitle
+  let taxSubtitle = '';
+  if (ytdTaxPaid > 0) {
+    const additionalDue = Math.max(0, result.totalTax - ytdTaxPaid);
+    taxSubtitle = `Additional due: $${additionalDue.toLocaleString()}`;
+  } else {
+    const effectiveRate = totalIncome > 0 ? ((result.totalTax / totalIncome) * 100).toFixed(1) : 0;
+    taxSubtitle = `Effective rate: ${effectiveRate}%`;
+  }
+
+  // Calculate marginal rate
+  const bands = calcBracketBreakdown(ytdIncome, result.income.ordinaryIncome);
+  const marginalRate = bands.length > 0 ? bands[bands.length - 1].rate : 0;
+  const marginalRateStr = (marginalRate * 100).toFixed(0);
 
   el.innerHTML = `
     <div class="simple-cards">
@@ -1291,7 +1351,7 @@ function renderSimpleSummary(result) {
       <div class="simple-card highlight">
         <div class="sc-label">Total Taxes</div>
         <div class="sc-big">$${result.totalTax.toLocaleString()}</div>
-        <div class="sc-sub">Effective rate: ${effectiveRate}%</div>
+        <div class="sc-sub">${taxSubtitle}</div>
       </div>
       <div class="simple-card">
         <div class="sc-label">Net Cash</div>
@@ -1306,6 +1366,11 @@ function renderSimpleSummary(result) {
     <div class="simple-alloc-labels">
       <span style="color:var(--grant-color)">${result.grantJuris.displayName}: ${grantPct}%</span>
       <span style="color:var(--vest-color)">${result.vestJuris.displayName}: ${vestPct}%</span>
+    </div>
+    <div class="simple-bracket-row">
+      <span class="sb-label">Marginal Rate:</span>
+      <span class="sb-val">${marginalRateStr}%</span>
+      <span class="sb-sub">(on this exercise)</span>
     </div>
   `;
 }
@@ -1583,6 +1648,25 @@ function getCurrentAward() {
   return AwardRegistry[awardId];
 }
 
+// Calculate which brackets income falls into
+function calcBracketBreakdown(ytdIncome, exerciseIncome) {
+  const bands = [];
+  let prev = 0;
+  const total = ytdIncome + exerciseIncome;
+  for (const bracket of FED_BRACKETS_2025) {
+    const bandTop = Math.min(bracket.upTo, total);
+    const width = bandTop - prev;
+    if (width <= 0) break;
+    const ytdInBand = Math.max(0, Math.min(ytdIncome, bandTop) - prev);
+    const exInBand = width - ytdInBand;
+    if (ytdInBand > 0 || exInBand > 0) {
+      bands.push({ rate: bracket.rate, ytd: ytdInBand, exercise: exInBand });
+    }
+    prev = bandTop;
+  }
+  return bands;
+}
+
 // Get inputs
 function getInputs() {
   const inputs = {
@@ -1597,7 +1681,9 @@ function getInputs() {
     ficaRate: parseFloat(document.getElementById('fica-rate').value),
     ltcgRate: parseFloat(document.getElementById('ltcg-rate').value),
     niitRate: document.getElementById('niit-toggle').value === '0' ? 0 : 0.038,
-    cityRate: parseFloat(document.getElementById('city-rate').value)
+    cityRate: parseFloat(document.getElementById('city-rate').value),
+    ytdIncome: parseFloat(document.getElementById('ytd-income').value) || 0,
+    ytdTaxPaid: parseFloat(document.getElementById('ytd-tax-paid').value) || 0
   };
 
   // Add award-specific fields
@@ -1644,6 +1730,9 @@ function calc() {
 
   // Render summary cards
   renderSummaryCards(result);
+
+  // Render bracket visualization
+  renderBracketViz(result, inputs);
 
   // Render tax table
   renderTaxTable(result.taxResults);
@@ -1740,6 +1829,21 @@ function renderSummaryCards(result) {
     <div class="sc-sub">Proceeds − Taxes − Costs</div>
   `;
   container.appendChild(card4);
+
+  // YTD context row (if applicable)
+  const inputs = getInputs();
+  if (inputs.ytdIncome > 0 || inputs.ytdTaxPaid > 0) {
+    const additionalDue = Math.max(0, result.totalTax - inputs.ytdTaxPaid);
+    const ytdContextRow = document.createElement('div');
+    ytdContextRow.className = 'ytd-context-row';
+    ytdContextRow.innerHTML = `
+      <div><strong>YTD Income</strong><div>$${inputs.ytdIncome.toLocaleString()}</div></div>
+      <div><strong>YTD Taxes Paid</strong><div>$${inputs.ytdTaxPaid.toLocaleString()}</div></div>
+      <div><strong>Exercise Income</strong><div>$${income.ordinaryIncome.toLocaleString()}</div></div>
+      <div><strong>Remaining Due</strong><div>$${additionalDue.toLocaleString()}</div></div>
+    `;
+    container.appendChild(ytdContextRow);
+  }
 }
 
 // Render tax table
@@ -1827,6 +1931,64 @@ function renderWaterfall(result) {
     <div class="wf-value">$${result.netCash.toLocaleString()}</div>
   `;
   container.appendChild(netRow);
+}
+
+// Render federal tax bracket visualization
+function renderBracketViz(result, inputs) {
+  const wrap = document.getElementById('bracket-viz-wrap');
+  if (!wrap) return;
+
+  const ytdIncome = inputs.ytdIncome || 0;
+  const exerciseIncome = result.income.ordinaryIncome;
+  const totalIncome = ytdIncome + exerciseIncome;
+
+  if (totalIncome === 0) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const bands = calcBracketBreakdown(ytdIncome, exerciseIncome);
+  const marginalRate = bands.length > 0 ? bands[bands.length - 1].rate : 0;
+
+  // Build bracket bar
+  let barHTML = '<div class="bracket-viz-title">Federal Tax Brackets (2025)</div>';
+  barHTML += '<div class="bracket-bar">';
+
+  for (const band of bands) {
+    const totalInBand = band.ytd + band.exercise;
+    const ytdPct = totalInBand > 0 ? (band.ytd / totalInBand) * 100 : 0;
+    const exPct = 100 - ytdPct;
+
+    barHTML += `<div style="flex:${totalInBand}; display:flex;">`;
+    if (band.ytd > 0) {
+      barHTML += `<div class="bracket-band ytd" style="flex:${ytdPct}" title="YTD in ${(band.rate*100).toFixed(0)}% bracket: $${Math.round(band.ytd).toLocaleString()}"></div>`;
+    }
+    if (band.exercise > 0) {
+      barHTML += `<div class="bracket-band exercise" style="flex:${exPct}" title="Exercise in ${(band.rate*100).toFixed(0)}% bracket: $${Math.round(band.exercise).toLocaleString()}"></div>`;
+    }
+    barHTML += '</div>';
+  }
+
+  barHTML += '</div>';
+
+  // Rate strip
+  barHTML += '<div class="bracket-rate-strip">';
+  for (const band of bands) {
+    const totalInBand = band.ytd + band.exercise;
+    barHTML += `<div class="bracket-rate-label" style="flex:${totalInBand}">${(band.rate*100).toFixed(0)}%</div>`;
+  }
+  barHTML += '</div>';
+
+  // Legend
+  barHTML += `<div class="bracket-legend">
+    <div><span class="bracket-legend-dot" style="background:rgba(200,151,58,0.35)"></span>YTD Income</div>
+    <div><span class="bracket-legend-dot" style="background:rgba(184,76,47,0.75)"></span>Exercise Income</div>
+  </div>`;
+
+  // Marginal rate
+  barHTML += `<div class="bracket-marginal">Your marginal rate on this exercise: <strong>${(marginalRate*100).toFixed(0)}%</strong></div>`;
+
+  wrap.innerHTML = barHTML;
 }
 
 // Update alerts
