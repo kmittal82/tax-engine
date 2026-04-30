@@ -205,6 +205,29 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
 .plugin-info code { font-family: 'DM Mono', monospace; font-size: 11px; background: var(--cream); padding: 1px 6px; border-radius: 2px; color: var(--ink); }
 
 @media (max-width: 900px) { .main-grid, .compare-grid, .concept-banner { grid-template-columns: 1fr; } }
+
+/* Mode toggle tabs */
+.mode-tabs { display: flex; gap: 4px; margin-bottom: 16px; background: white; border: 1px solid var(--border); border-radius: 6px; padding: 4px; width: fit-content; }
+.mode-tab { padding: 6px 20px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'Instrument Sans', sans-serif; color: var(--muted); background: transparent; transition: all 0.15s; letter-spacing: 0.3px; }
+.mode-tab.active { background: var(--ink); color: var(--paper); }
+.mode-tab:hover:not(.active) { color: var(--ink); }
+
+/* Visibility classes for modes */
+.advanced-only { display: block; }
+.simple-only { display: none; }
+body.mode-simple .advanced-only { display: none !important; }
+body.mode-simple .simple-only { display: block; }
+
+/* Simple mode cards */
+.simple-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.simple-card { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; }
+.simple-card.highlight { background: var(--ink); border-color: var(--ink); }
+.simple-card.highlight .sc-label { color: rgba(200, 151, 58, 0.7); }
+.simple-card.highlight .sc-big { color: var(--gold); }
+.sc-big { font-family: 'DM Serif Display', serif; font-size: 26px; color: var(--ink); margin: 4px 0; }
+.simple-alloc-bar { height: 8px; border-radius: 4px; display: flex; overflow: hidden; margin-bottom: 6px; }
+.simple-alloc-bar div { transition: width 0.4s ease; flex: 1; }
+.simple-alloc-labels { display: flex; justify-content: space-between; font-size: 11px; font-family: 'DM Mono', monospace; }
 </style>
 </head>
 <body>
@@ -223,9 +246,14 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
 
 <div class="page">
 
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tab-simple" onclick="setMode('simple')">Simple</button>
+    <button class="mode-tab" id="tab-advanced" onclick="setMode('advanced')">Advanced</button>
+  </div>
+
   <div id="award-tabs-container" class="award-tabs"></div>
 
-  <div class="concept-banner">
+  <div class="concept-banner advanced-only">
     <div class="concept-item"><strong>Taxable Event</strong><span id="cb-event">—</span></div>
     <div class="concept-item"><strong>Sourcing Period</strong><span id="cb-source">—</span></div>
     <div class="concept-item"><strong>Income Formula</strong><span id="cb-income">—</span></div>
@@ -245,9 +273,9 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
           <!-- Dynamically rendered fields based on selected award -->
           <div id="award-fields-container"></div>
 
-          <hr class="divider">
-          <div class="sec-label">Quick Cross-Border Scenarios</div>
-          <div class="chip-row" id="scenario-chips"></div>
+          <hr class="divider advanced-only">
+          <div class="sec-label advanced-only">Quick Cross-Border Scenarios</div>
+          <div class="chip-row advanced-only" id="scenario-chips"></div>
 
           <div class="sec-label">
             <span>Grant & Settlement Locations</span>
@@ -296,7 +324,7 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
             </div>
           </div>
 
-          <div class="alloc-row">
+          <div class="alloc-row advanced-only">
             <div class="alloc-title">Income Allocation Ratio</div>
             <div class="alloc-bar-container">
               <div class="alloc-bar-grant" id="alloc-bar-grant" style="width:50%"><span class="alloc-bar-label" id="alloc-pct-grant">50%</span></div>
@@ -321,6 +349,7 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
             </select>
           </div>
 
+          <div class="advanced-only">
           <div class="field">
             <label>FICA / Medicare</label>
             <select id="fica-rate" onchange="calc()">
@@ -358,6 +387,7 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
               <option value="0.025">Other (2.5%)</option>
             </select>
           </div>
+          </div>
 
         </div>
       </div>
@@ -373,7 +403,9 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
         </div>
         <div class="panel-body">
 
-          <div class="timeline">
+          <div id="simple-summary" class="simple-only"></div>
+
+          <div class="timeline advanced-only">
             <div class="timeline-title">
               <span>Award Lifecycle Timeline</span>
               <span style="color:var(--rust)">⚡ = Taxable Event</span>
@@ -383,61 +415,67 @@ optgroup { font-style: normal; font-weight: 600; color: var(--ink); background: 
 
           <div class="summary-cards" id="summary-cards-container"></div>
 
-          <div class="rules-box">
+          <div class="rules-box advanced-only">
             <strong>Sourcing Logic Applied:</strong>
             <ul id="rules-list"><li>Loading...</li></ul>
           </div>
 
-          <div class="alert election" id="election-alert">
+          <div class="alert election advanced-only" id="election-alert">
             <strong>📋 Section 83(b) Election:</strong> Income recognized at grant date. Future appreciation = capital gains.
           </div>
-          <div class="alert qualified" id="qualified-alert">
+          <div class="alert qualified advanced-only" id="qualified-alert">
             <strong>✅ Qualified Plan Detected:</strong> <span id="qualified-text"></span>
           </div>
-          <div class="alert cross" id="cross-border-alert">
+          <div class="alert cross advanced-only" id="cross-border-alert">
             <strong>🌍 Cross-Border Detected:</strong> <span id="cross-text"></span>
           </div>
-          <div class="alert warn" id="amt-alert">
+          <div class="alert warn advanced-only" id="amt-alert">
             <strong>⚠️ AMT Preference:</strong> The bargain element (<span id="amt-spread">—</span>) is an AMT preference item.
           </div>
-          <div class="alert info" id="double-tax-alert">
+          <div class="alert info advanced-only" id="double-tax-alert">
             <strong>ℹ️ Double-Taxation Risk:</strong> Limited treaty relief available between these jurisdictions.
           </div>
 
-          <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Tax Sourcing Breakdown</div>
-          <table class="sourcing-table">
-            <thead>
-              <tr>
-                <th>Component</th><th>Jurisdiction</th>
-                <th class="right">Taxable</th><th class="right">Rate</th>
-                <th class="right">Gross</th><th class="right">Credit</th>
-                <th class="right">Net</th>
-              </tr>
-            </thead>
-            <tbody id="tax-tbody"></tbody>
-          </table>
-
-          <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Cash Flow Waterfall</div>
-          <div id="waterfall-container"></div>
-
-          <div style="font-family:'DM Serif Display',serif;font-size:15px;margin:18px 0 8px">Impact vs. Same-Location Baseline</div>
-          <div class="compare-grid">
-            <div class="cg-header">Side-by-Side — How does relocation affect taxes?</div>
-            <div class="cg-col-header">Stayed in Grant Loc.</div>
-            <div class="cg-col-header highlight">Your Scenario</div>
-            <div class="cg-col-header">Stayed in Vest Loc.</div>
-            <div class="cg-cell"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-stayed-grant-tax">—</div></div>
-            <div class="cg-cell highlight"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-actual-tax">—</div></div>
-            <div class="cg-cell"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-stayed-vest-tax">—</div></div>
-            <div class="cg-cell"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-stayed-grant-net">—</div></div>
-            <div class="cg-cell highlight"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-actual-net">—</div></div>
-            <div class="cg-cell"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-stayed-vest-net">—</div></div>
-            <div class="cg-cell delta" id="cmp-delta-grant-cell"><div class="cg-label">vs. Your Scenario</div><div class="cg-val" id="cmp-delta-grant">—</div></div>
-            <div class="cg-cell highlight"><div class="cg-label">Your Scenario</div><div class="cg-val" style="color:var(--gold)">↑ Baseline</div></div>
-            <div class="cg-cell delta" id="cmp-delta-vest-cell"><div class="cg-label">vs. Your Scenario</div><div class="cg-val" id="cmp-delta-vest">—</div></div>
+          <div class="advanced-only">
+            <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Tax Sourcing Breakdown</div>
+            <table class="sourcing-table">
+              <thead>
+                <tr>
+                  <th>Component</th><th>Jurisdiction</th>
+                  <th class="right">Taxable</th><th class="right">Rate</th>
+                  <th class="right">Gross</th><th class="right">Credit</th>
+                  <th class="right">Net</th>
+                </tr>
+              </thead>
+              <tbody id="tax-tbody"></tbody>
+            </table>
           </div>
 
-          <div class="footnote">
+          <div class="advanced-only">
+            <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Cash Flow Waterfall</div>
+            <div id="waterfall-container"></div>
+          </div>
+
+          <div class="advanced-only">
+            <div style="font-family:'DM Serif Display',serif;font-size:15px;margin:18px 0 8px">Impact vs. Same-Location Baseline</div>
+            <div class="compare-grid">
+              <div class="cg-header">Side-by-Side — How does relocation affect taxes?</div>
+              <div class="cg-col-header">Stayed in Grant Loc.</div>
+              <div class="cg-col-header highlight">Your Scenario</div>
+              <div class="cg-col-header">Stayed in Vest Loc.</div>
+              <div class="cg-cell"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-stayed-grant-tax">—</div></div>
+              <div class="cg-cell highlight"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-actual-tax">—</div></div>
+              <div class="cg-cell"><div class="cg-label">Total Taxes</div><div class="cg-val" id="cmp-stayed-vest-tax">—</div></div>
+              <div class="cg-cell"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-stayed-grant-net">—</div></div>
+              <div class="cg-cell highlight"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-actual-net">—</div></div>
+              <div class="cg-cell"><div class="cg-label">Net Cash</div><div class="cg-val" id="cmp-stayed-vest-net">—</div></div>
+              <div class="cg-cell delta" id="cmp-delta-grant-cell"><div class="cg-label">vs. Your Scenario</div><div class="cg-val" id="cmp-delta-grant">—</div></div>
+              <div class="cg-cell highlight"><div class="cg-label">Your Scenario</div><div class="cg-val" style="color:var(--gold)">↑ Baseline</div></div>
+              <div class="cg-cell delta" id="cmp-delta-vest-cell"><div class="cg-label">vs. Your Scenario</div><div class="cg-val" id="cmp-delta-vest">—</div></div>
+            </div>
+          </div>
+
+          <div class="footnote advanced-only">
             <strong>Engine v3 — Plugin Architecture:</strong> Awards, jurisdictions, tax components, and sourcing strategies are registered via JS objects. To add a new award type, push to <code>AwardRegistry</code>; to add a new country, push to <code>JurisdictionRegistry</code>; to add a tax component, push to <code>TaxComponentRegistry</code>; to add a sourcing strategy, push to <code>SourcingStrategyRegistry</code>. See inline JS comments. Rates reflect 2025 top marginal data. Illustrative only — not tax advice.
           </div>
 
@@ -1212,11 +1250,64 @@ const CalcEngine = {
 
 // Initialize UI
 function init() {
+  setMode('simple');  // Start in simple mode
   renderAwardTabs();
   renderJurisdictionSelectors();
   renderScenarioChips();
   selectAward('NQ');
   calc();
+}
+
+// Set display mode (simple or advanced)
+function setMode(mode) {
+  if (mode === 'simple') {
+    document.body.classList.add('mode-simple');
+    document.getElementById('tab-simple').classList.add('active');
+    document.getElementById('tab-advanced').classList.remove('active');
+  } else {
+    document.body.classList.remove('mode-simple');
+    document.getElementById('tab-simple').classList.remove('active');
+    document.getElementById('tab-advanced').classList.add('active');
+  }
+}
+
+// Render simple mode summary cards
+function renderSimpleSummary(result) {
+  const el = document.getElementById('simple-summary');
+  if (!el) return;
+
+  const totalIncome = result.income.ordinaryIncome + result.income.capitalGain;
+  const effectiveRate = totalIncome > 0 ? ((result.totalTax / totalIncome) * 100).toFixed(1) : 0;
+  const grantPct = Math.round(result.allocation.grant * 1000) / 10;
+  const vestPct = Math.round(result.allocation.vest * 1000) / 10;
+
+  el.innerHTML = `
+    <div class="simple-cards">
+      <div class="simple-card">
+        <div class="sc-label">Taxable Income</div>
+        <div class="sc-big">$${totalIncome.toLocaleString()}</div>
+        <div class="sc-sub">${result.award.name} · ${result.grantJuris.displayName} → ${result.vestJuris.displayName}</div>
+      </div>
+      <div class="simple-card highlight">
+        <div class="sc-label">Total Taxes</div>
+        <div class="sc-big">$${result.totalTax.toLocaleString()}</div>
+        <div class="sc-sub">Effective rate: ${effectiveRate}%</div>
+      </div>
+      <div class="simple-card">
+        <div class="sc-label">Net Cash</div>
+        <div class="sc-big">$${result.netCash.toLocaleString()}</div>
+        <div class="sc-sub">After all taxes & costs</div>
+      </div>
+    </div>
+    <div class="simple-alloc-bar">
+      <div id="simple-bar-grant" style="background:var(--grant-color);width:${result.allocation.grant * 100}%"></div>
+      <div id="simple-bar-vest" style="background:var(--vest-color);width:${result.allocation.vest * 100}%"></div>
+    </div>
+    <div class="simple-alloc-labels">
+      <span style="color:var(--grant-color)">${result.grantJuris.displayName}: ${grantPct}%</span>
+      <span style="color:var(--vest-color)">${result.vestJuris.displayName}: ${vestPct}%</span>
+    </div>
+  `;
 }
 
 // Render award type tabs
@@ -1568,6 +1659,9 @@ function calc() {
 
   // Update rules
   updateRules(result.rules);
+
+  // Render simple summary (only visible in simple mode)
+  renderSimpleSummary(result);
 }
 
 // Update qualified pill
