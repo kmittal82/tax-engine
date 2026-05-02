@@ -469,6 +469,33 @@ optgroup { font-style: normal; font-weight: 600; color: var(--text); background:
   .page { padding: 20px; }
 }
 
+/* Toolbar */
+.toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+}
+.toolbar .mode-tabs { margin-bottom: 0; }
+.tool-actions { display: flex; gap: 8px; align-items: center; }
+.scenario-select {
+  padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 13px;
+  background: var(--bg); color: var(--text);
+  cursor: pointer; font-family: inherit; outline: none;
+  min-width: 180px;
+}
+.scenario-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.btn-tool {
+  padding: 8px 14px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg);
+  color: var(--text); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-tool:hover { background: var(--bg-soft); border-color: var(--text-muted); }
+.btn-tool.primary { background: var(--text); color: white; border-color: var(--text); }
+.btn-tool.primary:hover { background: #27272a; border-color: #27272a; }
+.btn-tool.success { background: var(--success); color: white; border-color: var(--success); }
+
 /* Mode toggle tabs */
 .mode-tabs {
   display: flex; gap: 2px; margin-bottom: 24px;
@@ -573,9 +600,20 @@ body.mode-simple .simple-only { display: block; }
 
 <div class="page">
 
-  <div class="mode-tabs">
-    <button class="mode-tab active" id="tab-simple" onclick="setMode('simple')">Simple</button>
-    <button class="mode-tab" id="tab-advanced" onclick="setMode('advanced')">Advanced</button>
+  <div class="toolbar">
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tab-simple" onclick="setMode('simple')">Simple</button>
+      <button class="mode-tab" id="tab-advanced" onclick="setMode('advanced')">Advanced</button>
+    </div>
+    <div class="tool-actions">
+      <select id="saved-scenarios" class="scenario-select" onchange="loadScenario(this.value)">
+        <option value="">Saved scenarios…</option>
+      </select>
+      <button class="btn-tool" onclick="saveScenario()" title="Save current inputs as a named scenario">Save</button>
+      <button class="btn-tool primary" onclick="shareLink()" id="share-btn">
+        <span id="share-btn-text">Copy Link</span>
+      </button>
+    </div>
   </div>
 
   <div id="award-tabs-container" class="award-tabs"></div>
@@ -1615,6 +1653,147 @@ function formatInteger(num) {
 // Cache current award to avoid expensive DOM queries
 let cachedAwardId = 'NQ';
 
+// =====================================================
+// STATE PERSISTENCE — URL hash + localStorage
+// =====================================================
+const SCENARIOS_KEY = 'tax-engine-scenarios';
+
+function serializeState() {
+  try {
+    return btoa(JSON.stringify(getInputs()));
+  } catch { return ''; }
+}
+
+function deserializeState(encoded) {
+  try {
+    return JSON.parse(atob(encoded));
+  } catch { return null; }
+}
+
+function applyState(state) {
+  if (!state) return;
+  isApplyingState = true;
+
+  if (state.awardType && AwardRegistry[state.awardType]) {
+    selectAward(state.awardType);
+  }
+
+  if (state.grantCountry) document.getElementById('grant-country').value = state.grantCountry;
+  if (state.vestCountry) document.getElementById('vest-country').value = state.vestCountry;
+  populateStateOptions('grant');
+  populateStateOptions('vest');
+  if (state.grantState != null) document.getElementById('grant-state').value = state.grantState;
+  if (state.vestState != null) document.getElementById('vest-state').value = state.vestState;
+
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  setVal('grant-days', state.grantDays);
+  setVal('grant-days-num', state.grantDays);
+  setVal('vest-days', state.vestDays);
+  setVal('vest-days-num', state.vestDays);
+  setVal('fed-rate', state.fedRate);
+  setVal('fica-rate', state.ficaRate);
+  setVal('ltcg-rate', state.ltcgRate);
+  setVal('city-rate', state.cityRate);
+  setVal('ytd-income', state.ytdIncome);
+  setVal('ytd-tax-paid', state.ytdTaxPaid);
+  if (state.niitRate != null) {
+    document.getElementById('niit-toggle').value = state.niitRate > 0 ? '0.038' : '0';
+  }
+
+  const award = AwardRegistry[state.awardType] || getCurrentAward();
+  for (const field of award.fields) {
+    if (state[field.id] == null) continue;
+    setVal(field.id, state[field.id]);
+    if (field.type === 'slider') {
+      setVal(field.id + '-num', state[field.id]);
+      updateBadge(field.id, state[field.id]);
+    }
+  }
+
+  updateRateDisplay('grant');
+  updateRateDisplay('vest');
+  if (document.getElementById('grant-days')) syncDays('grant', document.getElementById('grant-days'));
+  if (document.getElementById('vest-days')) syncDays('vest', document.getElementById('vest-days'));
+
+  isApplyingState = false;
+  calc();
+}
+
+let isApplyingState = false;
+let urlUpdateTimer = null;
+function updateURL() {
+  if (isApplyingState) return;
+  clearTimeout(urlUpdateTimer);
+  urlUpdateTimer = setTimeout(() => {
+    const encoded = serializeState();
+    if (encoded) history.replaceState(null, '', '#s=' + encoded);
+  }, 300);
+}
+
+function loadFromURL() {
+  const hash = window.location.hash;
+  if (hash.startsWith('#s=')) {
+    const state = deserializeState(hash.slice(3));
+    if (state) applyState(state);
+  }
+}
+
+async function shareLink() {
+  if (urlUpdateTimer) { clearTimeout(urlUpdateTimer); urlUpdateTimer = null; }
+  const encoded = serializeState();
+  if (encoded) history.replaceState(null, '', '#s=' + encoded);
+
+  const btn = document.getElementById('share-btn');
+  const text = document.getElementById('share-btn-text');
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    text.textContent = '✓ Copied!';
+    btn.classList.add('success');
+    setTimeout(() => { text.textContent = 'Copy Link'; btn.classList.remove('success'); }, 2000);
+  } catch {
+    prompt('Copy this link:', window.location.href);
+  }
+}
+
+function getSavedScenarios() {
+  try { return JSON.parse(localStorage.getItem(SCENARIOS_KEY) || '{}'); } catch { return {}; }
+}
+
+function saveScenario() {
+  const name = prompt('Name this scenario (e.g., "Move to Texas", "ISO disqualifying"):');
+  if (!name) return;
+  const scenarios = getSavedScenarios();
+  scenarios[name] = serializeState();
+  try {
+    localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
+    refreshScenariosDropdown();
+  } catch {
+    alert('Could not save — localStorage may be full or disabled.');
+  }
+}
+
+function loadScenario(name) {
+  if (!name) return;
+  const scenarios = getSavedScenarios();
+  const encoded = scenarios[name];
+  if (!encoded) return;
+  const state = deserializeState(encoded);
+  if (state) applyState(state);
+  document.getElementById('saved-scenarios').value = '';
+}
+
+function refreshScenariosDropdown() {
+  const select = document.getElementById('saved-scenarios');
+  if (!select) return;
+  const scenarios = getSavedScenarios();
+  const names = Object.keys(scenarios);
+  let html = '<option value="">' + (names.length ? 'Saved scenarios…' : 'No saved scenarios') + '</option>';
+  for (const name of names) {
+    html += `<option value="${name}">${name}</option>`;
+  }
+  select.innerHTML = html;
+}
+
 // Initialize UI
 function init() {
   setMode('simple');  // Start in simple mode
@@ -1623,6 +1802,8 @@ function init() {
   renderScenarioChips();
   selectAward('NQ');
   calc();
+  loadFromURL();
+  refreshScenariosDropdown();
 }
 
 // Set display mode (simple or advanced)
@@ -2057,6 +2238,9 @@ function calc() {
 
   // Render simple summary (only visible in simple mode)
   renderSimpleSummary(result);
+
+  // Sync state to URL (debounced)
+  updateURL();
 }
 
 // Update qualified pill
