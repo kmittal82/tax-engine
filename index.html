@@ -808,16 +808,6 @@ body.mode-projection .concept-banner { display: none !important; }
           <hr class="divider">
           <div class="sec-label">Common Tax Parameters</div>
 
-          <div class="field">
-            <label>US Federal Marginal Rate</label>
-            <select id="fed-rate" onchange="calc()">
-              <option value="0.10">10%</option><option value="0.12">12%</option>
-              <option value="0.22">22%</option><option value="0.24" selected>24%</option>
-              <option value="0.32">32%</option><option value="0.35">35%</option>
-              <option value="0.37">37%</option>
-            </select>
-          </div>
-
           <div class="advanced-only">
           <div class="field">
             <label>FICA / Medicare</label>
@@ -1280,11 +1270,18 @@ const TaxComponentRegistry = [
     label: 'US Federal Income Tax',
     pillClass: 'pill-fed',
     applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full',
-    compute: (ctx) => ({
-      label: 'US Federal Income Tax', juris: 'IRS', pillClass: 'pill-fed',
-      taxable: ctx.fullIncome, rate: ctx.inputs.fedRate,
-      tax: ctx.fullIncome * ctx.inputs.fedRate
-    })
+    compute: (ctx) => {
+      const income = ctx.fullIncome;
+      const ytd    = ctx.inputs.ytdIncome || 0;
+      // Use actual 2025 brackets stacked above YTD income
+      const bands  = calcBracketBreakdown(ytd, income);
+      const tax    = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
+      const effectiveRate = income > 0 ? tax / income : 0;
+      return {
+        label: 'US Federal Income Tax', juris: 'IRS', pillClass: 'pill-fed',
+        taxable: income, rate: effectiveRate, tax
+      };
+    }
   },
   {
     id: 'us_fica',
@@ -1428,7 +1425,10 @@ const TaxComponentRegistry = [
       const exemption = 137000;
       const amtBase = Math.max(0, spread - exemption);
       const amtTax = amtBase * 0.26;
-      const regularTax = ctx.fullIncome * ctx.inputs.fedRate;
+      // Use actual bracket tax (same as us_federal) for the regular-tax comparison
+      const ytd = ctx.inputs.ytdIncome || 0;
+      const bands = calcBracketBreakdown(ytd, spread);
+      const regularTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
       const netAMT = Math.max(0, amtTax - regularTax);
       return {
         label: 'AMT (Alternative Minimum Tax)', juris: 'AMT', pillClass: 'pill-amt',
@@ -1443,7 +1443,10 @@ const TaxComponentRegistry = [
     applies: (ctx) => ctx.scope === 'full' && ctx.juris.isUS && ctx.sourceForeignIncomeTax > 0,
     compute: (ctx) => {
       const foreignIncomeTax = ctx.sourceForeignIncomeTax || 0;
-      const credit = Math.min(foreignIncomeTax, ctx.fullIncome * ctx.inputs.fedRate);
+      const ytd = ctx.inputs.ytdIncome || 0;
+      const bands = calcBracketBreakdown(ytd, ctx.fullIncome);
+      const usFedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
+      const credit = Math.min(foreignIncomeTax, usFedTax);
       return {
         label: 'Federal Foreign Tax Credit', juris: 'FTC', pillClass: 'pill-cap',
         taxable: 0, rate: 0, tax: 0, credit
@@ -2382,7 +2385,7 @@ function getInputs() {
     vestState: document.getElementById('vest-state').value,
     grantDays: parseInt(document.getElementById('grant-days').value),
     vestDays: parseInt(document.getElementById('vest-days').value),
-    fedRate: parseFloat(document.getElementById('fed-rate').value),
+    fedRate: parseFloat(document.getElementById('fed-rate')?.value) || 0.24,
     ficaRate: parseFloat(document.getElementById('fica-rate').value),
     ltcgRate: parseFloat(document.getElementById('ltcg-rate').value),
     niitRate: document.getElementById('niit-toggle').value === '0' ? 0 : 0.038,
