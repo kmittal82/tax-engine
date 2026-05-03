@@ -582,6 +582,108 @@ body.mode-simple .simple-only { display: block; }
   display: block; font-size: 14px; font-weight: 600;
   color: var(--text); margin-top: 2px;
 }
+
+/* Multi-Year Projection */
+.proj-summary {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  margin-bottom: 20px;
+}
+.proj-summary-card {
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px;
+}
+.proj-summary-card.highlight {
+  background: var(--text); border-color: var(--text);
+}
+.proj-summary-card.highlight .proj-summary-label { color: rgba(255,255,255,0.6); }
+.proj-summary-card.highlight .proj-summary-val { color: white; }
+.proj-summary-label {
+  font-size: 11px; color: var(--text-muted);
+  font-weight: 500; margin-bottom: 6px;
+}
+.proj-summary-val {
+  font-size: 20px; font-weight: 600;
+  color: var(--text); letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+.projection-chart {
+  display: flex; align-items: flex-end; justify-content: space-around;
+  gap: 8px; height: 220px; padding: 20px 16px 16px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: 10px; margin-bottom: 12px;
+}
+.proj-year {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; height: 100%; justify-content: flex-end;
+  min-width: 0;
+}
+.proj-bar-container {
+  width: 100%; height: 140px;
+  display: flex; align-items: flex-end; justify-content: center;
+  margin-bottom: 8px;
+}
+.proj-bar-net {
+  width: 70%; max-width: 48px;
+  background: var(--success);
+  border-radius: 6px 6px 0 0;
+  position: relative;
+  min-height: 4px;
+  transition: height 0.4s ease;
+  cursor: default;
+}
+.proj-bar-tax {
+  width: 100%; background: var(--danger);
+  border-radius: 6px 6px 0 0;
+  position: absolute; top: 0; left: 0;
+  transition: height 0.4s ease;
+}
+.proj-year-label {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  margin-top: 6px;
+}
+.proj-year-val {
+  font-size: 11px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; margin-top: 2px;
+}
+.proj-year-sub { font-size: 10px; color: var(--text-subtle); }
+.proj-legend {
+  display: flex; gap: 20px; font-size: 12px;
+  color: var(--text-muted); margin-bottom: 16px; justify-content: center;
+}
+.proj-legend-dot {
+  width: 10px; height: 10px; border-radius: 3px;
+  display: inline-block; margin-right: 6px; vertical-align: middle;
+}
+.proj-empty {
+  color: var(--text-muted); font-size: 13px; padding: 24px;
+  text-align: center; background: var(--bg-soft);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.proj-note {
+  margin-top: 12px; padding: 10px 14px;
+  font-size: 12px; color: var(--text-muted); line-height: 1.5;
+  background: var(--bg-soft); border-radius: 8px;
+}
+.proj-note strong { color: var(--text); }
+
+@media (max-width: 700px) {
+  .proj-summary { grid-template-columns: 1fr 1fr; }
+}
+
+/* Projection mode */
+.projection-only { display: none; }
+body.mode-projection .projection-only { display: block; }
+body.mode-projection .main-grid,
+body.mode-projection .concept-banner { display: none !important; }
+
+.proj-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.proj-table th { background: var(--bg-soft); color: var(--text-muted); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.proj-table th.right { text-align: right; }
+.proj-table td { padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; font-variant-numeric: tabular-nums; }
+.proj-table tr:last-child td { border-bottom: none; }
+.proj-table td.right { text-align: right; }
+.proj-table tr.proj-total td { background: var(--bg-soft); font-weight: 600; border-top: 1px solid var(--border); }
+.proj-table tr.proj-skip td { color: var(--text-subtle); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -604,6 +706,7 @@ body.mode-simple .simple-only { display: block; }
     <div class="mode-tabs">
       <button class="mode-tab active" id="tab-simple" onclick="setMode('simple')">Simple</button>
       <button class="mode-tab" id="tab-advanced" onclick="setMode('advanced')">Advanced</button>
+      <button class="mode-tab" id="tab-projection" onclick="setMode('projection')">Projection</button>
     </div>
     <div class="tool-actions">
       <select id="saved-scenarios" class="scenario-select" onchange="loadScenario(this.value)">
@@ -861,6 +964,101 @@ body.mode-simple .simple-only { display: block; }
       </div>
     </div>
   </div>
+
+  <!-- Multi-Year Projection Panel -->
+  <div id="projection-container" class="projection-only">
+    <div class="main-grid">
+
+      <!-- Left: projection config -->
+      <div>
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-label">Projection Settings</div>
+              <div class="panel-title">Vesting Schedule Model</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="plugin-info" style="margin-bottom:16px">
+              Projecting <strong id="proj-award-name">—</strong> · <span id="proj-juris-name">—</span>. Change award or jurisdiction using the tabs and panels above, then switch back to Projection.
+            </div>
+
+            <div class="sec-label">Vesting Schedule</div>
+
+            <div class="field">
+              <label><span>Vesting Years</span> <span class="val-badge" id="sv-proj-years">4</span></label>
+              <div class="slider-row">
+                <input type="range" id="proj-years" min="1" max="8" step="1" value="4"
+                  oninput="syncProjSlider('proj-years',this.value);renderProjection()">
+                <input type="number" id="proj-years-num" min="1" max="8" value="4"
+                  oninput="syncProjSlider('proj-years',this.value);renderProjection()"
+                  style="width:60px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:inherit;text-align:center">
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Vesting Pattern</label>
+              <select id="proj-vesting-type" onchange="renderProjection()">
+                <option value="even">Equal each year</option>
+                <option value="front">Front-weighted (more early)</option>
+                <option value="back">Back-weighted (more later)</option>
+                <option value="cliff">Cliff (all in final year)</option>
+              </select>
+            </div>
+
+            <hr class="divider">
+            <div class="sec-label">Growth Assumptions</div>
+
+            <div class="field">
+              <label><span>Annual Stock Price Growth</span> <span class="val-badge" id="sv-proj-price-growth">10%</span></label>
+              <div class="slider-row">
+                <input type="range" id="proj-price-growth" min="-20" max="50" step="1" value="10"
+                  oninput="syncProjSlider('proj-price-growth',this.value);renderProjection()">
+                <input type="number" id="proj-price-growth-num" min="-20" max="50" value="10"
+                  oninput="syncProjSlider('proj-price-growth',this.value);renderProjection()"
+                  style="width:60px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:inherit;text-align:center">
+              </div>
+            </div>
+
+            <div class="field">
+              <label><span>Annual Salary Growth</span> <span class="val-badge" id="sv-proj-salary-growth">5%</span></label>
+              <div class="slider-row">
+                <input type="range" id="proj-salary-growth" min="0" max="20" step="1" value="5"
+                  oninput="syncProjSlider('proj-salary-growth',this.value);renderProjection()">
+                <input type="number" id="proj-salary-growth-num" min="0" max="20" value="5"
+                  oninput="syncProjSlider('proj-salary-growth',this.value);renderProjection()"
+                  style="width:60px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:inherit;text-align:center">
+              </div>
+            </div>
+
+            <div class="field">
+              <label><span>Starting Annual Base Salary</span> <span class="helper">(Year 1 non-equity income)</span></label>
+              <input type="number" id="proj-base-salary" min="0" step="5000" value="150000"
+                oninput="renderProjection()">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: projection results -->
+      <div>
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-label">Results</div>
+              <div class="panel-title">Multi-Year Tax Projection</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="proj-results"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -1806,17 +2004,25 @@ function init() {
   refreshScenariosDropdown();
 }
 
-// Set display mode (simple or advanced)
+// Set display mode (simple / advanced / projection)
 function setMode(mode) {
+  document.body.classList.remove('mode-simple', 'mode-projection');
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + mode)?.classList.add('active');
+
   if (mode === 'simple') {
     document.body.classList.add('mode-simple');
-    document.getElementById('tab-simple').classList.add('active');
-    document.getElementById('tab-advanced').classList.remove('active');
-  } else {
-    document.body.classList.remove('mode-simple');
-    document.getElementById('tab-simple').classList.remove('active');
-    document.getElementById('tab-advanced').classList.add('active');
+  } else if (mode === 'projection') {
+    document.body.classList.add('mode-projection');
+    const inputs = getInputs();
+    const projSalaryEl = document.getElementById('proj-base-salary');
+    if (projSalaryEl && !projSalaryEl._initialized) {
+      projSalaryEl.value = inputs.ytdIncome || 150000;
+      projSalaryEl._initialized = true;
+    }
+    renderProjection();
   }
+  // advanced: no body class needed (default state)
 }
 
 // Render simple mode summary cards
@@ -2241,6 +2447,9 @@ function calc() {
 
   // Sync state to URL (debounced)
   updateURL();
+
+  // Keep projection in sync when award type changes
+  if (document.body.classList.contains('mode-projection')) renderProjection();
 }
 
 // Update qualified pill
@@ -2565,6 +2774,242 @@ function updateRules(rules) {
     li.textContent = rule;
     list.appendChild(li);
   }
+}
+
+// =====================================================
+// MULTI-YEAR PROJECTION
+// =====================================================
+
+function syncProjSlider(id, value) {
+  const slider = document.getElementById(id);
+  const num = document.getElementById(id + '-num');
+  if (slider) slider.value = value;
+  if (num) num.value = value;
+  const badge = document.getElementById('sv-' + id);
+  if (badge) badge.textContent = id.includes('growth') ? value + '%' : value;
+}
+
+function getVestingSchedule(type, years) {
+  if (type === 'even') {
+    return Array(years).fill(1 / years);
+  }
+  if (type === 'cliff') {
+    return [...Array(years - 1).fill(0), 1.0];
+  }
+  // Triangular weights: front = descending, back = ascending
+  const total = (years * (years + 1)) / 2;
+  if (type === 'front') {
+    return Array.from({ length: years }, (_, i) => (years - i) / total);
+  }
+  // back
+  return Array.from({ length: years }, (_, i) => (i + 1) / total);
+}
+
+function computeProjection() {
+  const inputs = getInputs();
+  const years = parseInt(document.getElementById('proj-years')?.value) || 4;
+  const vestingType = document.getElementById('proj-vesting-type')?.value || 'even';
+  const priceGrowth = (parseFloat(document.getElementById('proj-price-growth')?.value) || 0) / 100;
+  const salaryGrowth = (parseFloat(document.getElementById('proj-salary-growth')?.value) || 0) / 100;
+  const baseSalary = parseFloat(document.getElementById('proj-base-salary')?.value) || 0;
+
+  const vestPcts = getVestingSchedule(vestingType, years);
+  const yearResults = [];
+
+  for (let y = 0; y < years; y++) {
+    if (vestPcts[y] === 0) {
+      yearResults.push({ year: y + 1, skip: true });
+      continue;
+    }
+
+    const yi = { ...inputs };
+    const priceMultiplier = Math.pow(1 + priceGrowth, y);
+
+    // Grow price-based fields
+    if (yi.fmv != null)         yi.fmv         = Math.round(inputs.fmv         * priceMultiplier * 100) / 100;
+    if (yi.fmvGrant != null)    yi.fmvGrant    = Math.round(inputs.fmvGrant    * priceMultiplier * 100) / 100;
+    if (yi.fmvPurchase != null) yi.fmvPurchase = Math.round(inputs.fmvPurchase * priceMultiplier * 100) / 100;
+    if (yi.fmvSale != null)     yi.fmvSale     = Math.round(inputs.fmvSale     * priceMultiplier * 100) / 100;
+    // strike and purchasePrice don't appreciate
+
+    // Scale shares to this year's vesting tranche
+    const frac = vestPcts[y];
+    if (inputs.shares != null)       yi.shares       = Math.max(1, Math.round(inputs.shares       * frac));
+    if (inputs.targetShares != null) yi.targetShares = Math.max(1, Math.round(inputs.targetShares * frac));
+
+    // Salary grows independently; becomes YTD ordinary income context
+    yi.ytdIncome = Math.round(baseSalary * Math.pow(1 + salaryGrowth, y));
+
+    const result = CalcEngine.compute(yi);
+    if (result.error) continue;
+
+    yearResults.push({
+      year: y + 1,
+      fmv: yi.fmv,
+      shares: yi.shares ?? yi.targetShares,
+      vestPct: frac,
+      salary: yi.ytdIncome,
+      ...result
+    });
+  }
+
+  return yearResults;
+}
+
+function renderProjection() {
+  const el = document.getElementById('proj-results');
+  if (!el) return;
+
+  const award = getCurrentAward();
+  const inputs = getInputs();
+  const grantJuris = JurisdictionRegistry.resolve(inputs.grantCountry, inputs.grantState);
+  const vestJuris  = JurisdictionRegistry.resolve(inputs.vestCountry,  inputs.vestState);
+
+  const awardNameEl = document.getElementById('proj-award-name');
+  if (awardNameEl) awardNameEl.textContent = award.name;
+  const jurisEl = document.getElementById('proj-juris-name');
+  if (jurisEl && grantJuris && vestJuris) {
+    jurisEl.textContent = grantJuris.displayName === vestJuris.displayName
+      ? grantJuris.displayName
+      : `${grantJuris.displayName} → ${vestJuris.displayName}`;
+  }
+
+  const rows = computeProjection();
+  const valid = rows.filter(r => !r.skip);
+
+  if (!valid.length) {
+    el.innerHTML = '<div class="proj-empty">No vesting events to display. Try a different vesting pattern.</div>';
+    return;
+  }
+
+  const totalIncome = valid.reduce((s, r) => s + r.income.ordinaryIncome + r.income.capitalGain, 0);
+  const totalTax    = valid.reduce((s, r) => s + r.totalTax, 0);
+  const totalNet    = valid.reduce((s, r) => s + r.netCash, 0);
+  const avgEffRate  = totalIncome > 0 ? totalTax / totalIncome : 0;
+
+  // Summary cards
+  let html = `<div class="proj-summary">
+    <div class="proj-summary-card">
+      <div class="proj-summary-label">Total Equity Income</div>
+      <div class="proj-summary-val">${formatCurrency(Math.round(totalIncome))}</div>
+    </div>
+    <div class="proj-summary-card highlight">
+      <div class="proj-summary-label">Total Taxes</div>
+      <div class="proj-summary-val">${formatCurrency(Math.round(totalTax))}</div>
+    </div>
+    <div class="proj-summary-card">
+      <div class="proj-summary-label">Total Net Cash</div>
+      <div class="proj-summary-val">${formatCurrency(Math.round(totalNet))}</div>
+    </div>
+    <div class="proj-summary-card">
+      <div class="proj-summary-label">Avg Effective Rate</div>
+      <div class="proj-summary-val">${(avgEffRate * 100).toFixed(1)}%</div>
+    </div>
+  </div>`;
+
+  // Legend
+  html += `<div class="proj-legend">
+    <div><span class="proj-legend-dot" style="background:var(--danger)"></span>Taxes</div>
+    <div><span class="proj-legend-dot" style="background:var(--success)"></span>Net Cash</div>
+  </div>`;
+
+  // Bar chart
+  const maxBar = Math.max(...valid.map(r => r.totalTax + Math.max(0, r.netCash)));
+  const BAR_H = 140;
+
+  html += `<div class="projection-chart">`;
+  for (const row of rows) {
+    if (row.skip) {
+      html += `<div class="proj-year">
+        <div class="proj-bar-container">
+          <div class="proj-bar-net" style="height:2px;width:70%;background:var(--border)"></div>
+        </div>
+        <div class="proj-year-label">Yr ${row.year}</div>
+        <div class="proj-year-val" style="color:var(--text-subtle)">—</div>
+      </div>`;
+      continue;
+    }
+
+    const income = row.income.ordinaryIncome + row.income.capitalGain;
+    const total  = row.totalTax + Math.max(0, row.netCash);
+    const barH   = maxBar > 0 ? Math.round((total / maxBar) * BAR_H) : 4;
+    const taxH   = total > 0 ? Math.round((row.totalTax / total) * barH) : 0;
+    const effR   = income > 0 ? (row.totalTax / income * 100).toFixed(0) : '0';
+
+    html += `<div class="proj-year">
+      <div class="proj-bar-container">
+        <div class="proj-bar-net" style="height:${barH}px;width:70%;max-width:48px">
+          <div class="proj-bar-tax" style="height:${taxH}px"></div>
+        </div>
+      </div>
+      <div class="proj-year-label">Yr ${row.year}</div>
+      <div class="proj-year-val">${formatCurrency(Math.round(income))}</div>
+      <div class="proj-year-sub">${effR}% eff.</div>
+    </div>`;
+  }
+  html += `</div>`;
+
+  // Year-by-year table
+  html += `<table class="proj-table">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th class="right">FMV</th>
+        <th class="right">Shares</th>
+        <th class="right">Base Salary</th>
+        <th class="right">Equity Income</th>
+        <th class="right">Taxes</th>
+        <th class="right">Net Cash</th>
+        <th class="right">Eff. Rate</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for (const row of rows) {
+    if (row.skip) {
+      html += `<tr class="proj-skip">
+        <td>Year ${row.year}</td>
+        <td colspan="7" style="text-align:center">No vest this year (cliff schedule)</td>
+      </tr>`;
+      continue;
+    }
+
+    const income  = row.income.ordinaryIncome + row.income.capitalGain;
+    const effRate = income > 0 ? (row.totalTax / income * 100).toFixed(1) + '%' : '—';
+
+    html += `<tr>
+      <td><strong>Year ${row.year}</strong></td>
+      <td class="right">${row.fmv != null ? formatCurrency(row.fmv) : '—'}</td>
+      <td class="right">${row.shares != null ? row.shares.toLocaleString() : '—'}</td>
+      <td class="right" style="color:var(--text-muted)">${formatCurrency(row.salary)}</td>
+      <td class="right">${formatCurrency(Math.round(income))}</td>
+      <td class="right" style="color:var(--danger)">${formatCurrency(Math.round(row.totalTax))}</td>
+      <td class="right" style="color:var(--success)">${formatCurrency(Math.round(row.netCash))}</td>
+      <td class="right">${effRate}</td>
+    </tr>`;
+  }
+
+  html += `<tr class="proj-total">
+    <td>Total</td>
+    <td class="right">—</td>
+    <td class="right">—</td>
+    <td class="right">—</td>
+    <td class="right">${formatCurrency(Math.round(totalIncome))}</td>
+    <td class="right" style="color:var(--danger)">${formatCurrency(Math.round(totalTax))}</td>
+    <td class="right" style="color:var(--success)">${formatCurrency(Math.round(totalNet))}</td>
+    <td class="right">${(avgEffRate * 100).toFixed(1)}%</td>
+  </tr>`;
+
+  html += `</tbody></table>`;
+
+  const priceGrowthVal = document.getElementById('proj-price-growth')?.value || '0';
+  html += `<div class="proj-note">
+    <strong>Note:</strong> Tax rates held at current selections. Stock price compounds at
+    <strong>${priceGrowthVal}%/yr</strong> from the current FMV. Base salary scales annually but is
+    illustrative — actual marginal brackets may shift. Not tax advice.
+  </div>`;
+
+  el.innerHTML = html;
 }
 
 // Initialize on load
