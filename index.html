@@ -923,10 +923,12 @@ body.mode-projection .concept-banner { display: none !important; }
             <table class="sourcing-table">
               <thead>
                 <tr>
-                  <th>Component</th><th>Jurisdiction</th>
-                  <th class="right">Taxable</th><th class="right">Rate</th>
-                  <th class="right">Gross</th><th class="right">Credit</th>
-                  <th class="right">Net</th>
+                  <th>Tax Component</th>
+                  <th class="right">Taxable Amount</th>
+                  <th class="right">Rate</th>
+                  <th class="right">Gross Tax</th>
+                  <th class="right">Credit</th>
+                  <th class="right">Net Tax</th>
                 </tr>
               </thead>
               <tbody id="tax-tbody"></tbody>
@@ -2562,29 +2564,30 @@ function renderTaxTable(taxResults) {
   for (const r of taxResults) {
     const row = document.createElement('tr');
     row.className = r.scope === 'capital_gain' ? 'future-row' : '';
-    const taxableDisplay = r.allocatedIncome ? formatInteger(r.allocatedIncome) : r.capitalGain ? formatInteger(r.capitalGain) : r.fullIncome ? formatInteger(r.fullIncome) : '—';
     row.innerHTML = `
-      <td><span class="juris-pill pill-${r.pillClass}">${r.juris}</span> ${r.label}</td>
-      <td class="right">${taxableDisplay === '—' ? '—' : formatCurrency(parseFloat(taxableDisplay.replace(/,/g, '')))}</td>
-      <td class="right">${formatPercentage(r.rate)}</td>
-      <td class="right">${formatCurrency(r.tax)}</td>
-      <td class="right">${r.credit ? '−' + formatCurrency(r.credit) : '—'}</td>
+      <td><span class="juris-pill ${r.pillClass}">${r.juris}</span> ${r.label}</td>
+      <td class="right">${r.taxable > 0 ? formatCurrency(r.taxable) : '—'}</td>
+      <td class="right">${r.rate > 0 ? formatPercentage(r.rate) : '—'}</td>
+      <td class="right">${r.tax > 0 ? formatCurrency(r.tax) : '—'}</td>
+      <td class="right">${r.credit > 0 ? '−' + formatCurrency(r.credit) : '—'}</td>
       <td class="right">${formatCurrency(r.net)}</td>
     `;
     tbody.appendChild(row);
   }
 
-  // Total row
+  const totalGross  = taxResults.reduce((s, r) => s + r.tax, 0);
+  const totalCredit = taxResults.reduce((s, r) => s + (r.credit || 0), 0);
+  const totalNet    = taxResults.reduce((s, r) => s + r.net, 0);
+
   const totalRow = document.createElement('tr');
   totalRow.className = 'total-row';
-  const totalTax = taxResults.reduce((sum, r) => sum + r.net, 0);
   totalRow.innerHTML = `
-    <td><strong>Total Taxes</strong></td>
+    <td><strong>Total</strong></td>
     <td class="right">—</td>
     <td class="right">—</td>
-    <td class="right">${formatCurrency(totalTax)}</td>
-    <td class="right">—</td>
-    <td class="right">${formatCurrency(totalTax)}</td>
+    <td class="right">${formatCurrency(totalGross)}</td>
+    <td class="right">${totalCredit > 0 ? '−' + formatCurrency(totalCredit) : '—'}</td>
+    <td class="right"><strong>${formatCurrency(totalNet)}</strong></td>
   `;
   tbody.appendChild(totalRow);
 }
