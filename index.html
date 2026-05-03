@@ -2646,78 +2646,96 @@ function renderBracketViz(result, inputs) {
   const wrap = document.getElementById('bracket-viz-wrap');
   if (!wrap) return;
 
-  const ytdIncome     = inputs.ytdIncome || 0;
+  const ytdIncome      = inputs.ytdIncome || 0;
   const exerciseIncome = result.income.ordinaryIncome;
 
   if (exerciseIncome === 0) { wrap.innerHTML = ''; return; }
 
   const totalIncome = ytdIncome + exerciseIncome;
   const rateStr = r => (r * 100).toFixed(0) + '%';
-  const BAR_H = 52;
-
-  // Build per-bracket data (all 7 brackets, including empty ones)
-  let prev = 0;
   const TOP_CAP = 700000;
+
+  // Per-bracket data
+  let prev = 0;
   const bracketData = FED_BRACKETS_2025.map(b => {
     const lo = prev;
     const hi = b.upTo === Infinity ? TOP_CAP : b.upTo;
-    const capacity = hi - lo;
     prev = hi;
-
     const ytdInBand  = Math.max(0, Math.min(ytdIncome, hi) - lo);
     const exStart    = Math.max(lo, ytdIncome);
     const exEnd      = Math.min(totalIncome, hi);
     const exInBand   = Math.max(0, exEnd - exStart);
-
-    return { rate: b.rate, lo, hi, capacity, ytd: ytdInBand, ex: exInBand };
+    return { rate: b.rate, lo, hi, capacity: hi - lo, ytd: ytdInBand, ex: exInBand, tax: exInBand * b.rate };
   });
 
-  const marginalBand = [...bracketData].reverse().find(b => b.ex > 0) || bracketData[0];
+  const lastActiveIdx = bracketData.reduce((last, b, i) => (b.ytd > 0 || b.ex > 0 ? i : last), -1);
+  // Show all active brackets + one empty bracket above (headroom context)
+  const rows = bracketData.slice(0, Math.min(lastActiveIdx + 2, bracketData.length));
 
-  const fmtK = v => v >= 1000 ? '$' + Math.round(v / 1000) + 'k' : '$' + Math.round(v);
+  const totalTaxOnEquity = rows.reduce((s, b) => s + b.tax, 0);
+  const effectiveRate    = exerciseIncome > 0 ? totalTaxOnEquity / exerciseIncome : 0;
+  const marginalBand     = [...rows].reverse().find(b => b.ex > 0);
 
-  let html = `<div class="bracket-viz-title">Federal Tax Brackets (2025)</div>
-<div style="display:flex;gap:3px;margin:10px 0 4px;align-items:flex-end;">`;
+  const td = (content, opts = '') =>
+    `<td style="padding:9px 12px;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums;${opts}">${content}</td>`;
 
-  for (const b of bracketData) {
-    const ytdH   = Math.round((b.ytd / b.capacity) * BAR_H);
-    const exH    = Math.round((b.ex  / b.capacity) * BAR_H);
-    const isHit  = b.ytd > 0 || b.ex > 0;
-    const isMarg = b === marginalBand;
+  let html = `<div class="bracket-viz-title" style="margin-bottom:10px">Federal Income Tax — Bracket Breakdown (2025)</div>`;
 
-    const ytdLbl = b.ytd > 0 && ytdH >= 14 ? fmtK(b.ytd) : '';
-    const exLbl  = b.ex  > 0 && exH  >= 14 ? fmtK(b.ex)  : '';
+  html += `<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px">
+    <thead><tr>
+      <th style="background:var(--bg-soft);padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Bracket</th>
+      <th style="background:var(--bg-soft);padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Rate</th>
+      <th style="background:var(--bg-soft);padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">YTD in bracket</th>
+      <th style="background:var(--bg-soft);padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Equity in bracket</th>
+      <th style="background:var(--bg-soft);padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Tax on equity</th>
+    </tr></thead>
+    <tbody>`;
 
-    const borderColor = isMarg ? 'var(--accent)' : 'var(--border)';
-    const shadow      = isMarg ? '0 0 0 2px var(--accent-soft)' : 'none';
-    const rateColor   = isHit  ? 'var(--text)' : 'var(--text-subtle)';
+  for (const b of rows) {
+    const hasEquity  = b.ex > 0;
+    const isNext     = b.ytd === 0 && b.ex === 0;   // empty headroom row
+    const isMarginal = b === marginalBand;
+    const rowBg      = hasEquity ? 'background:var(--accent-soft)' : isNext ? 'background:var(--bg-soft)' : '';
 
-    html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;">
-      <div style="font-size:11px;font-weight:600;color:${rateColor};margin-bottom:4px">${rateStr(b.rate)}</div>
-      <div style="width:100%;height:${BAR_H}px;background:var(--bg-subtle);border-radius:6px;position:relative;overflow:hidden;border:1px solid ${borderColor};box-shadow:${shadow}">`;
+    const loStr = formatCurrency(b.lo);
+    const hiStr = b.hi >= TOP_CAP ? '$626k+' : formatCurrency(b.hi);
 
-    if (ytdH > 0) {
-      html += `<div style="position:absolute;bottom:0;left:0;right:0;height:${ytdH}px;background:rgba(245,158,11,0.5);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#92400e">${ytdLbl}</div>`;
-    }
-    if (exH > 0) {
-      html += `<div style="position:absolute;bottom:${ytdH}px;left:0;right:0;height:${exH}px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff">${exLbl}</div>`;
-    }
+    const rateCell = isMarginal
+      ? `<strong style="color:var(--accent-text)">${rateStr(b.rate)}</strong>`
+      : `<span style="color:${hasEquity ? 'var(--accent-text)' : 'var(--text-muted)'}">${rateStr(b.rate)}</span>`;
 
-    const loStr = b.lo === 0 ? '$0' : fmtK(b.lo);
-    const hiStr = b.hi >= TOP_CAP ? fmtK(TOP_CAP) + '+' : fmtK(b.hi);
+    const equityCell = hasEquity
+      ? `<strong style="color:var(--accent-text)">${formatCurrency(Math.round(b.ex))}</strong>`
+      : isNext
+        ? `<span style="font-size:11px;color:var(--text-subtle)">Headroom: ${formatCurrency(b.capacity)}</span>`
+        : '—';
 
-    html += `</div>
-      <div style="font-size:9px;color:var(--text-subtle);margin-top:3px;text-align:center;line-height:1.3">${loStr}<br>${hiStr}</div>
-    </div>`;
+    const taxCell = hasEquity
+      ? `<strong style="color:var(--danger)">${formatCurrency(Math.round(b.tax))}</strong>`
+      : '—';
+
+    html += `<tr style="${rowBg}">
+      ${td(`${loStr} – ${hiStr}`, 'color:var(--text-muted);font-size:11px')}
+      ${td(rateCell, 'text-align:center')}
+      ${td(b.ytd > 0 ? formatCurrency(Math.round(b.ytd)) : '—', 'text-align:right;color:var(--text-muted)')}
+      ${td(equityCell, 'text-align:right')}
+      ${td(taxCell, 'text-align:right')}
+    </tr>`;
   }
 
-  html += `</div>`;
+  // Totals row
+  html += `<tr style="background:var(--bg-soft)">
+    <td colspan="2" style="padding:9px 12px;font-weight:600;font-size:12px;color:var(--text);border-top:1px solid var(--border)">Total</td>
+    <td style="padding:9px 12px;text-align:right;font-weight:600;border-top:1px solid var(--border);font-variant-numeric:tabular-nums">${formatCurrency(Math.round(ytdIncome))}</td>
+    <td style="padding:9px 12px;text-align:right;font-weight:700;color:var(--accent-text);border-top:1px solid var(--border);font-variant-numeric:tabular-nums">${formatCurrency(Math.round(exerciseIncome))}</td>
+    <td style="padding:9px 12px;text-align:right;font-weight:700;color:var(--danger);border-top:1px solid var(--border);font-variant-numeric:tabular-nums">${formatCurrency(Math.round(totalTaxOnEquity))}</td>
+  </tr>`;
 
-  // Legend + marginal rate inline
-  html += `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-muted);margin-top:2px">
-    <div><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:rgba(245,158,11,0.5);margin-right:4px;vertical-align:middle"></span>YTD Income</div>
-    <div><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>Equity Income</div>
-    <div style="margin-left:auto;font-size:13px;font-weight:500;color:var(--text)">Marginal rate: <strong style="color:var(--accent-text)">${rateStr(marginalBand.rate)}</strong></div>
+  html += `</tbody></table>`;
+
+  html += `<div style="display:flex;gap:24px;font-size:13px;color:var(--text-muted)">
+    <div>Marginal rate: <strong style="color:var(--accent-text)">${marginalBand ? rateStr(marginalBand.rate) : '—'}</strong></div>
+    <div>Effective rate on equity: <strong style="color:var(--text)">${(effectiveRate * 100).toFixed(1)}%</strong></div>
   </div>`;
 
   wrap.innerHTML = html;
