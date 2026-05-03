@@ -673,7 +673,8 @@ body.mode-simple .simple-only { display: block; }
 /* Projection mode */
 .projection-only { display: none; }
 body.mode-projection .projection-only { display: block; }
-body.mode-projection .main-grid,
+body.mode-projection .main-grid { display: none !important; }
+body.mode-projection #projection-container .main-grid { display: grid !important; }
 body.mode-projection .concept-banner { display: none !important; }
 
 .proj-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
