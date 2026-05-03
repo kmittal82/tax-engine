@@ -1749,30 +1749,26 @@ const CalcEngine = {
     const isSameJuris = (grantJuris.isUS && vestJuris.isUS && grantJuris.stateCode === vestJuris.stateCode) ||
                         (!grantJuris.isUS && !vestJuris.isUS && grantJuris.countryCode === vestJuris.countryCode);
 
-    // Phase A: Compute source taxes first, then capture them for credit calculation
-    for (let i = 0; i < jurisList.length; i++) {
-      const juris = jurisList[i];
-      const allocPct = i === 0 ? allocation.grant : allocation.vest;
-      const allocatedIncome = income.ordinaryIncome * allocPct;
-
-      for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome })) continue;
-        const result = comp.compute({
-          juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome,
-          sourceStateTax: 0, sourceForeignIncomeTax: 0
-        });
-        taxResults.push({ ...result, scope: 'source', allocPct });
-      }
+    // Phase A: Source taxes for the GRANT jurisdiction only.
+    // (Vest jurisdiction is the resident state — handled in Phase B with credits.)
+    const grantAllocatedIncome = income.ordinaryIncome * allocation.grant;
+    for (const comp of TaxComponentRegistry) {
+      if (!comp.applies({ juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: grantAllocatedIncome })) continue;
+      const result = comp.compute({
+        juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome,
+        allocatedIncome: grantAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0
+      });
+      taxResults.push({ ...result, scope: 'source', allocPct: allocation.grant });
     }
 
-    // Phase B: Compute resident and full scopes for vest jurisdiction only
-    // Pre-capture grant source taxes for credit calculations
+    // Phase B: Resident + full scopes for vest jurisdiction.
+    // Capture grant source taxes first so the resident components can apply credits.
     const grantSourceStateTax = taxResults.find(r => r.juris === grantJuris.stateCode && r.scope === 'source')?.tax || 0;
     const grantForeignIncomeTax = taxResults.find(r => r.juris === grantJuris.shortCode && r.scope === 'source' && r.label.includes('Income'))?.tax || 0;
 
     const vestAllocPct = allocation.vest;
     const vestAllocatedIncome = income.ordinaryIncome * vestAllocPct;
-    const scopesForVest = isSameJuris ? ['resident', 'full'] : ['source', 'resident', 'full'];
+    const scopesForVest = ['resident', 'full'];
 
     for (const scope of scopesForVest) {
       for (const comp of TaxComponentRegistry) {
