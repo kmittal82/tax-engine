@@ -997,7 +997,7 @@ body.mode-projection .concept-banner { display: none !important; }
               </div>
             </div>
 
-            <div class="field">
+            <div class="field" id="proj-vesting-type-field">
               <label>Vesting Pattern</label>
               <select id="proj-vesting-type" onchange="renderProjection()">
                 <option value="even">Equal each year</option>
@@ -1005,6 +1005,12 @@ body.mode-projection .concept-banner { display: none !important; }
                 <option value="back">Back-weighted (more later)</option>
                 <option value="cliff">Cliff (all in final year)</option>
               </select>
+            </div>
+
+            <div class="field">
+              <label><span>Grant / Start Year</span></label>
+              <input type="number" id="proj-start-year" min="2000" max="2040" step="1" value="2025"
+                oninput="renderProjection()">
             </div>
 
             <hr class="divider">
@@ -2808,48 +2814,74 @@ function getVestingSchedule(type, years) {
 
 function computeProjection() {
   const inputs = getInputs();
-  const years = parseInt(document.getElementById('proj-years')?.value) || 4;
+  const years       = parseInt(document.getElementById('proj-years')?.value) || 4;
   const vestingType = document.getElementById('proj-vesting-type')?.value || 'even';
   const priceGrowth = (parseFloat(document.getElementById('proj-price-growth')?.value) || 0) / 100;
   const salaryGrowth = (parseFloat(document.getElementById('proj-salary-growth')?.value) || 0) / 100;
-  const baseSalary = parseFloat(document.getElementById('proj-base-salary')?.value) || 0;
+  const baseSalary  = parseFloat(document.getElementById('proj-base-salary')?.value) || 0;
+  const startYear   = parseInt(document.getElementById('proj-start-year')?.value) || new Date().getFullYear();
 
-  const vestPcts = getVestingSchedule(vestingType, years);
+  const isESPP = inputs.awardType === 'ESPP';
+  // ESPP: each period is a fully independent offering — no vesting schedule
+  const vestPcts = isESPP ? Array(years).fill(1.0) : getVestingSchedule(vestingType, years);
+
+  const award = AwardRegistry[inputs.awardType];
+  const isUS  = inputs.vestCountry === 'US';
+
   const yearResults = [];
 
   for (let y = 0; y < years; y++) {
     if (vestPcts[y] === 0) {
-      yearResults.push({ year: y + 1, skip: true });
+      yearResults.push({ year: y + 1, actualYear: startYear + y, skip: true });
       continue;
     }
 
     const yi = { ...inputs };
     const priceMultiplier = Math.pow(1 + priceGrowth, y);
 
-    // Grow price-based fields
-    if (yi.fmv != null)         yi.fmv         = Math.round(inputs.fmv         * priceMultiplier * 100) / 100;
-    if (yi.fmvGrant != null)    yi.fmvGrant    = Math.round(inputs.fmvGrant    * priceMultiplier * 100) / 100;
-    if (yi.fmvPurchase != null) yi.fmvPurchase = Math.round(inputs.fmvPurchase * priceMultiplier * 100) / 100;
-    if (yi.fmvSale != null)     yi.fmvSale     = Math.round(inputs.fmvSale     * priceMultiplier * 100) / 100;
-    // strike and purchasePrice don't appreciate
+    // Grow FMV-based fields; strike and purchasePrice are fixed by the plan
+    if (inputs.fmv         != null) yi.fmv         = Math.round(inputs.fmv         * priceMultiplier * 100) / 100;
+    if (inputs.fmvGrant    != null) yi.fmvGrant    = Math.round(inputs.fmvGrant    * priceMultiplier * 100) / 100;
+    if (inputs.fmvPurchase != null) yi.fmvPurchase = Math.round(inputs.fmvPurchase * priceMultiplier * 100) / 100;
+    if (inputs.fmvSale     != null) yi.fmvSale     = Math.round(inputs.fmvSale     * priceMultiplier * 100) / 100;
 
-    // Scale shares to this year's vesting tranche
+    // ESPP: each period purchases the same share count independently (not a fraction of total)
+    // All other awards: scale shares to this year's vesting tranche
     const frac = vestPcts[y];
-    if (inputs.shares != null)       yi.shares       = Math.max(1, Math.round(inputs.shares       * frac));
-    if (inputs.targetShares != null) yi.targetShares = Math.max(1, Math.round(inputs.targetShares * frac));
+    if (!isESPP) {
+      if (inputs.shares != null)       yi.shares       = Math.max(1, Math.round(inputs.shares       * frac));
+      if (inputs.targetShares != null) yi.targetShares = Math.max(1, Math.round(inputs.targetShares * frac));
+    }
 
-    // Salary grows independently; becomes YTD ordinary income context
+    // Salary grows year-over-year; feeds the YTD income context for bracket placement
     yi.ytdIncome = Math.round(baseSalary * Math.pow(1 + salaryGrowth, y));
+
+    // Bracket-aware federal rate: replace the flat user selection with the actual
+    // marginal rate derived from where this year's equity income lands in the brackets
+    if (isUS && award) {
+      const tempIncome = award.computeIncome(yi);
+      if (tempIncome.ordinaryIncome > 0) {
+        const bands = calcBracketBreakdown(yi.ytdIncome, tempIncome.ordinaryIncome);
+        const actualFedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
+        yi.fedRate = actualFedTax / tempIncome.ordinaryIncome;
+      }
+    }
 
     const result = CalcEngine.compute(yi);
     if (result.error) continue;
 
+    const displayFmv = isESPP ? yi.fmvSale : yi.fmv;
+    const displayShares = yi.shares ?? yi.targetShares ?? inputs.shares;
+
     yearResults.push({
       year: y + 1,
-      fmv: yi.fmv,
-      shares: yi.shares ?? yi.targetShares,
+      actualYear: startYear + y,
+      isESPP,
+      fmv: displayFmv,
+      shares: displayShares,
       vestPct: frac,
       salary: yi.ytdIncome,
+      fedRateUsed: yi.fedRate,
       ...result
     });
   }
@@ -2875,8 +2907,13 @@ function renderProjection() {
       : `${grantJuris.displayName} → ${vestJuris.displayName}`;
   }
 
+  // Show/hide vesting type selector — irrelevant for ESPP
+  const vestTypeField = document.getElementById('proj-vesting-type-field');
+  if (vestTypeField) vestTypeField.style.display = award.id === 'ESPP' ? 'none' : '';
+
   const rows = computeProjection();
   const valid = rows.filter(r => !r.skip);
+  const isESPP = award.id === 'ESPP';
 
   if (!valid.length) {
     el.innerHTML = '<div class="proj-empty">No vesting events to display. Try a different vesting pattern.</div>';
@@ -2920,12 +2957,13 @@ function renderProjection() {
 
   html += `<div class="projection-chart">`;
   for (const row of rows) {
+    const yearLabel = isESPP ? `P${row.year}` : String(row.actualYear);
     if (row.skip) {
       html += `<div class="proj-year">
         <div class="proj-bar-container">
           <div class="proj-bar-net" style="height:2px;width:70%;background:var(--border)"></div>
         </div>
-        <div class="proj-year-label">Yr ${row.year}</div>
+        <div class="proj-year-label">${yearLabel}</div>
         <div class="proj-year-val" style="color:var(--text-subtle)">—</div>
       </div>`;
       continue;
@@ -2943,7 +2981,7 @@ function renderProjection() {
           <div class="proj-bar-tax" style="height:${taxH}px"></div>
         </div>
       </div>
-      <div class="proj-year-label">Yr ${row.year}</div>
+      <div class="proj-year-label">${yearLabel}</div>
       <div class="proj-year-val">${formatCurrency(Math.round(income))}</div>
       <div class="proj-year-sub">${effR}% eff.</div>
     </div>`;
@@ -2951,12 +2989,16 @@ function renderProjection() {
   html += `</div>`;
 
   // Year-by-year table
+  const periodLabel = isESPP ? 'Period' : 'Year';
+  const sharesLabel = isESPP ? 'Shares/Period' : 'Shares';
+  const priceLabel  = isESPP ? 'FMV at Sale' : 'FMV';
+
   html += `<table class="proj-table">
     <thead>
       <tr>
-        <th>Year</th>
-        <th class="right">FMV</th>
-        <th class="right">Shares</th>
+        <th>${periodLabel}</th>
+        <th class="right">${priceLabel}</th>
+        <th class="right">${sharesLabel}</th>
         <th class="right">Base Salary</th>
         <th class="right">Equity Income</th>
         <th class="right">Taxes</th>
@@ -2967,10 +3009,11 @@ function renderProjection() {
     <tbody>`;
 
   for (const row of rows) {
+    const rowLabel = isESPP ? `Period ${row.year}` : String(row.actualYear);
     if (row.skip) {
       html += `<tr class="proj-skip">
-        <td>Year ${row.year}</td>
-        <td colspan="7" style="text-align:center">No vest this year (cliff schedule)</td>
+        <td>${rowLabel}</td>
+        <td colspan="7" style="text-align:center">No vest (cliff schedule)</td>
       </tr>`;
       continue;
     }
@@ -2979,7 +3022,7 @@ function renderProjection() {
     const effRate = income > 0 ? (row.totalTax / income * 100).toFixed(1) + '%' : '—';
 
     html += `<tr>
-      <td><strong>Year ${row.year}</strong></td>
+      <td><strong>${rowLabel}</strong></td>
       <td class="right">${row.fmv != null ? formatCurrency(row.fmv) : '—'}</td>
       <td class="right">${row.shares != null ? row.shares.toLocaleString() : '—'}</td>
       <td class="right" style="color:var(--text-muted)">${formatCurrency(row.salary)}</td>
@@ -3004,10 +3047,14 @@ function renderProjection() {
   html += `</tbody></table>`;
 
   const priceGrowthVal = document.getElementById('proj-price-growth')?.value || '0';
+  const bracketNote = inputs.vestCountry === 'US'
+    ? 'Federal income tax uses actual 2025 brackets per year (salary + equity income stacked).'
+    : 'Federal rates use the current marginal rate selection.';
+  const esppNote = isESPP
+    ? ' ESPP: each period models one full offering at the same share count, with compounding FMV.'
+    : '';
   html += `<div class="proj-note">
-    <strong>Note:</strong> Tax rates held at current selections. Stock price compounds at
-    <strong>${priceGrowthVal}%/yr</strong> from the current FMV. Base salary scales annually but is
-    illustrative — actual marginal brackets may shift. Not tax advice.
+    <strong>Note:</strong> ${bracketNote} Stock price compounds at <strong>${priceGrowthVal}%/yr</strong>.${esppNote} Illustrative only — not tax advice.
   </div>`;
 
   el.innerHTML = html;
