@@ -1749,16 +1749,18 @@ const CalcEngine = {
     const isSameJuris = (grantJuris.isUS && vestJuris.isUS && grantJuris.stateCode === vestJuris.stateCode) ||
                         (!grantJuris.isUS && !vestJuris.isUS && grantJuris.countryCode === vestJuris.countryCode);
 
-    // Phase A: Source taxes for the GRANT jurisdiction only.
-    // (Vest jurisdiction is the resident state — handled in Phase B with credits.)
+    // Phase A: Source taxes for the GRANT jurisdiction only — skipped when grant === vest
+    // (same-jurisdiction: no source allocation needed, Phase B resident handles it entirely)
     const grantAllocatedIncome = income.ordinaryIncome * allocation.grant;
-    for (const comp of TaxComponentRegistry) {
-      if (!comp.applies({ juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: grantAllocatedIncome })) continue;
-      const result = comp.compute({
-        juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome,
-        allocatedIncome: grantAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0
-      });
-      taxResults.push({ ...result, scope: 'source', allocPct: allocation.grant });
+    if (!isSameJuris) {
+      for (const comp of TaxComponentRegistry) {
+        if (!comp.applies({ juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: grantAllocatedIncome })) continue;
+        const result = comp.compute({
+          juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome,
+          allocatedIncome: grantAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0
+        });
+        taxResults.push({ ...result, scope: 'source', allocPct: allocation.grant });
+      }
     }
 
     // Phase B: Resident + full scopes for vest jurisdiction.
