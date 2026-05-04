@@ -827,16 +827,7 @@ body.mode-projection .concept-banner { display: none !important; }
 
           <div class="advanced-only">
           <div class="field">
-            <label>FICA / Medicare</label>
-            <select id="fica-rate" onchange="calc()">
-              <option value="0">0% — Not applicable</option>
-              <option value="0.0145" selected>1.45% Medicare only</option>
-              <option value="0.0235">2.35% Addl. Medicare</option>
-              <option value="0.0765">7.65% Full FICA</option>
-            </select>
-          </div>
-
-          <div class="field">
+            <label>Federal LTCG Rate <span class="helper">(for capital gains tax)</span></label>
             <label>Federal LTCG Rate <span class="helper">(for capital gains tax)</span></label>
             <select id="ltcg-rate" onchange="calc()">
               <option value="0">0%</option>
@@ -1328,15 +1319,48 @@ const TaxComponentRegistry = [
     }
   },
   {
-    id: 'us_fica',
-    label: 'FICA / Medicare',
+    id: 'us_ss',
+    label: 'Social Security',
     pillClass: 'pill-fica',
-    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA && ctx.inputs.ficaRate > 0,
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA
+                      && (ctx.inputs.ytdIncome || 0) < 176100,
+    compute: (ctx) => {
+      const ytd     = ctx.inputs.ytdIncome || 0;
+      const ssRoom  = Math.max(0, 176100 - ytd);
+      const taxable = Math.min(ctx.fullIncome, ssRoom);
+      return {
+        label: 'Social Security (6.2%)', juris: 'FED', pillClass: 'pill-fica',
+        taxable, rate: 0.062, tax: taxable * 0.062
+      };
+    }
+  },
+  {
+    id: 'us_medicare',
+    label: 'Medicare',
+    pillClass: 'pill-fica',
+    applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA,
     compute: (ctx) => ({
-      label: 'FICA / Medicare', juris: 'FED', pillClass: 'pill-fica',
-      taxable: ctx.fullIncome, rate: ctx.inputs.ficaRate,
-      tax: ctx.fullIncome * ctx.inputs.ficaRate
+      label: 'Medicare (1.45%)', juris: 'FED', pillClass: 'pill-fica',
+      taxable: ctx.fullIncome, rate: 0.0145, tax: ctx.fullIncome * 0.0145
     })
+  },
+  {
+    id: 'us_addl_medicare',
+    label: 'Additional Medicare Tax',
+    pillClass: 'pill-fica',
+    applies: (ctx) => {
+      const ytd = ctx.inputs.ytdIncome || 0;
+      return ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA
+             && (ytd + ctx.fullIncome) > 200000;
+    },
+    compute: (ctx) => {
+      const ytd     = ctx.inputs.ytdIncome || 0;
+      const taxable = Math.max(0, (ytd + ctx.fullIncome) - Math.max(ytd, 200000));
+      return {
+        label: 'Additional Medicare (0.9%)', juris: 'FED', pillClass: 'pill-fica',
+        taxable, rate: 0.009, tax: taxable * 0.009
+      };
+    }
   },
   {
     id: 'us_state_source',
@@ -1943,7 +1967,6 @@ function applyState(state) {
   setVal('vest-days', state.vestDays);
   setVal('vest-days-num', state.vestDays);
   setVal('fed-rate', state.fedRate);
-  setVal('fica-rate', state.ficaRate);
   setVal('ltcg-rate', state.ltcgRate);
   setVal('city-rate', state.cityRate);
   setVal('ytd-income', state.ytdIncome);
@@ -2428,7 +2451,6 @@ function getInputs() {
     grantDays: parseInt(document.getElementById('grant-days').value),
     vestDays: parseInt(document.getElementById('vest-days').value),
     fedRate: parseFloat(document.getElementById('fed-rate')?.value) || 0.24,
-    ficaRate: parseFloat(document.getElementById('fica-rate').value),
     ltcgRate: parseFloat(document.getElementById('ltcg-rate').value),
     niitRate: document.getElementById('niit-toggle').value === '0' ? 0 : 0.038,
     cityRate: parseFloat(document.getElementById('city-rate').value),
