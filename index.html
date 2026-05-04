@@ -665,6 +665,23 @@ body.mode-simple .simple-only { display: block; }
   background: var(--bg-soft); border-radius: 8px;
 }
 .proj-note strong { color: var(--text); }
+.cr-alert {
+  background: var(--warning-soft); border: 1px solid var(--warning);
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;
+}
+.cr-alert-title { font-weight: 700; color: #92400e; font-size: 13px; margin-bottom: 6px; }
+.cr-alert-body { font-size: 12px; color: #78350f; line-height: 1.6; }
+.cr-comparison {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px;
+}
+.cr-comp-card {
+  background: white; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; font-size: 12px;
+}
+.cr-comp-card.cr-risk { border-color: var(--warning); background: var(--warning-soft); }
+.cr-comp-label { color: var(--text-subtle); font-size: 11px; margin-bottom: 4px; }
+.cr-comp-val { font-weight: 700; font-size: 15px; }
+.cr-comp-delta { font-size: 11px; color: var(--danger); margin-top: 2px; font-weight: 600; }
 
 @media (max-width: 700px) {
   .proj-summary { grid-template-columns: 1fr 1fr; }
@@ -1034,6 +1051,33 @@ body.mode-projection .concept-banner { display: none !important; }
               <label><span>Starting Annual Base Salary</span> <span class="helper">(Year 1 non-equity income)</span></label>
               <input type="number" id="proj-base-salary" min="0" step="5000" value="150000"
                 oninput="renderProjection()">
+            </div>
+
+            <hr class="divider">
+            <div class="sec-label">Retirement Eligibility (IRS §83)</div>
+
+            <div class="field">
+              <label>Company Retirement Provision <span class="helper">(continued vesting after retirement?)</span></label>
+              <select id="proj-retirement-rule" onchange="toggleRetirementFields();renderProjection()">
+                <option value="none">None / Not applicable</option>
+                <option value="age55_10">Age 55 + 10 yrs service</option>
+                <option value="rule70">Rule of 70 (age + service ≥ 70)</option>
+                <option value="rule75">Rule of 75 (age + service ≥ 75)</option>
+                <option value="rule80">Rule of 80 (age + service ≥ 80)</option>
+                <option value="age65">Age 65</option>
+              </select>
+            </div>
+            <div id="proj-retirement-fields" style="display:none">
+              <div class="field">
+                <label>Current Age</label>
+                <input type="number" id="proj-current-age" min="18" max="80" step="1" value="45"
+                  oninput="renderProjection()">
+              </div>
+              <div class="field">
+                <label>Years of Service</label>
+                <input type="number" id="proj-years-service" min="0" max="50" step="1" value="8"
+                  oninput="renderProjection()">
+              </div>
             </div>
 
           </div>
@@ -2857,6 +2901,28 @@ function getVestingSchedule(type, years) {
   return Array.from({ length: years }, (_, i) => (i + 1) / total);
 }
 
+function toggleRetirementFields() {
+  const rule = document.getElementById('proj-retirement-rule')?.value || 'none';
+  const el = document.getElementById('proj-retirement-fields');
+  if (el) el.style.display = rule === 'none' ? 'none' : '';
+}
+
+function yearsUntilRetirementEligible(age, svc, rule) {
+  if (!rule || rule === 'none' || age <= 0) return Infinity;
+  if (rule === 'age55_10') {
+    if (age >= 55 && svc >= 10) return 0;
+    return Math.max(age < 55 ? 55 - age : 0, svc < 10 ? 10 - svc : 0);
+  }
+  const target = { rule70: 70, rule75: 75, rule80: 80 }[rule];
+  if (target != null) {
+    const sum = age + svc;
+    if (sum >= target) return 0;
+    return Math.ceil((target - sum) / 2);
+  }
+  if (rule === 'age65') return Math.max(0, 65 - age);
+  return Infinity;
+}
+
 function computeProjection() {
   const inputs = getInputs();
   const years       = parseInt(document.getElementById('proj-years')?.value) || 4;
@@ -2931,7 +2997,63 @@ function computeProjection() {
     });
   }
 
-  return yearResults;
+  // Constructive receipt scenario (IRS §83)
+  let crData = null;
+  const retirementRule = document.getElementById('proj-retirement-rule')?.value || 'none';
+  const currentAge     = parseInt(document.getElementById('proj-current-age')?.value) || 0;
+  const yearsService   = parseInt(document.getElementById('proj-years-service')?.value) || 0;
+
+  if (retirementRule !== 'none' && !isESPP && currentAge > 0) {
+    const currentYear   = new Date().getFullYear();
+    const yrsFromNow    = yearsUntilRetirementEligible(currentAge, yearsService, retirementRule);
+    // Convert "years from now" into a 0-based index into this projection's years array
+    const crIndex       = Math.max(0, Math.round((currentYear - startYear) + yrsFromNow));
+
+    if (crIndex < years) {
+      // Shares that vest normally BEFORE the CR year
+      const crFrac = vestPcts.slice(crIndex).reduce((s, p) => s + p, 0);
+
+      // Tax on the concentrated CR-year lump (all remaining shares at CR-year FMV)
+      const crYi = { ...inputs };
+      const crMult = Math.pow(1 + priceGrowth, crIndex);
+      if (inputs.fmv         != null) crYi.fmv         = Math.round(inputs.fmv         * crMult * 100) / 100;
+      if (inputs.fmvGrant    != null) crYi.fmvGrant    = Math.round(inputs.fmvGrant    * crMult * 100) / 100;
+      if (inputs.fmvPurchase != null) crYi.fmvPurchase = Math.round(inputs.fmvPurchase * crMult * 100) / 100;
+      if (inputs.fmvSale     != null) crYi.fmvSale     = Math.round(inputs.fmvSale     * crMult * 100) / 100;
+      if (inputs.shares      != null) crYi.shares      = Math.max(1, Math.round(inputs.shares * crFrac));
+      crYi.ytdIncome = Math.round(baseSalary * Math.pow(1 + salaryGrowth, crIndex));
+      if (isUS && award) {
+        const tmp = award.computeIncome(crYi);
+        if (tmp.ordinaryIncome > 0) {
+          const bands = calcBracketBreakdown(crYi.ytdIncome, tmp.ordinaryIncome);
+          const fedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
+          crYi.fedRate = fedTax / tmp.ordinaryIncome;
+        }
+      }
+      const crResult = CalcEngine.compute(crYi);
+
+      const normalBeforeCRTax = yearResults
+        .filter(r => !r.skip && r.year - 1 < crIndex)
+        .reduce((s, r) => s + r.totalTax, 0);
+      const crTotalTax  = normalBeforeCRTax + (crResult.error ? 0 : crResult.totalTax);
+      const normalTotal = yearResults.filter(r => !r.skip).reduce((s, r) => s + r.totalTax, 0);
+
+      crData = {
+        crIndex,
+        crCalendarYear: startYear + crIndex,
+        alreadyEligible: yrsFromNow === 0,
+        crIncome: crResult.error ? 0 : (crResult.income?.ordinaryIncome || 0),
+        crYearTax: crResult.error ? 0 : crResult.totalTax,
+        crShares: crYi.shares,
+        crFmv: crYi.fmv ?? crYi.fmvSale,
+        crTotalTax,
+        normalTotal,
+        taxDelta: crTotalTax - normalTotal,
+      };
+    }
+  }
+
+  return { rows: yearResults, crData };
 }
 
 function renderProjection() {
@@ -2956,7 +3078,7 @@ function renderProjection() {
   const vestTypeField = document.getElementById('proj-vesting-type-field');
   if (vestTypeField) vestTypeField.style.display = award.id === 'ESPP' ? 'none' : '';
 
-  const rows = computeProjection();
+  const { rows, crData } = computeProjection();
   const valid = rows.filter(r => !r.skip);
   const isESPP = award.id === 'ESPP';
 
@@ -2970,8 +3092,45 @@ function renderProjection() {
   const totalNet    = valid.reduce((s, r) => s + r.netCash, 0);
   const avgEffRate  = totalIncome > 0 ? totalTax / totalIncome : 0;
 
+  // Constructive receipt alert
+  let html = '';
+  if (crData) {
+    const ruleLabel = document.getElementById('proj-retirement-rule')?.selectedOptions[0]?.text || '';
+    const eligible  = crData.alreadyEligible
+      ? 'You are already retirement-eligible.'
+      : `You become retirement-eligible in <strong>${crData.crCalendarYear}</strong>.`;
+    const deltaSign = crData.taxDelta >= 0 ? '+' : '−';
+    const deltaAbs  = formatCurrency(Math.abs(Math.round(crData.taxDelta)));
+    html += `<div class="cr-alert">
+      <div class="cr-alert-title">⚠ Constructive Receipt Risk (IRS §83)</div>
+      <div class="cr-alert-body">
+        ${eligible} Under your plan's retirement provision (<em>${ruleLabel}</em>), unvested RSUs may
+        no longer face a "substantial risk of forfeiture" — making <strong>${formatCurrency(Math.round(crData.crIncome))}</strong>
+        of equity income taxable in <strong>${crData.crCalendarYear}</strong>
+        (${formatCurrency(Math.round(crData.crShares ?? 0))} shares at ${crData.crFmv != null ? formatCurrency(crData.crFmv) : '—'}/share)
+        instead of spreading across the remaining vest dates.
+        <div class="cr-comparison">
+          <div class="cr-comp-card">
+            <div class="cr-comp-label">Normal Vesting — Total Tax</div>
+            <div class="cr-comp-val">${formatCurrency(Math.round(crData.normalTotal))}</div>
+          </div>
+          <div class="cr-comp-card cr-risk">
+            <div class="cr-comp-label">Constructive Receipt — Total Tax</div>
+            <div class="cr-comp-val">${formatCurrency(Math.round(crData.crTotalTax))}</div>
+            <div class="cr-comp-delta">${deltaSign}${deltaAbs} vs normal vesting</div>
+          </div>
+          <div class="cr-comp-card">
+            <div class="cr-comp-label">Concentrated in ${crData.crCalendarYear}</div>
+            <div class="cr-comp-val">${formatCurrency(Math.round(crData.crYearTax))}</div>
+            <div class="cr-comp-delta" style="color:var(--text-subtle)">tax in that single year</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   // Summary cards
-  let html = `<div class="proj-summary">
+  html += `<div class="proj-summary">
     <div class="proj-summary-card">
       <div class="proj-summary-label">Total Equity Income</div>
       <div class="proj-summary-val">${formatCurrency(Math.round(totalIncome))}</div>
