@@ -2494,7 +2494,7 @@ function calc() {
   updateComparison(result);
 
   // Update rules
-  updateRules(result.rules);
+  updateRules(result);
 
   // Render simple summary (only visible in simple mode)
   renderSimpleSummary(result);
@@ -2800,12 +2800,16 @@ function updateAlerts(result) {
     },
     'qualified-alert': {
       condition: () => {
-        return result.grantJuris.qualifiedPlans[result.award.id] || result.vestJuris.qualifiedPlans[result.award.id];
+        const gqp = result.grantJuris.qualifiedPlans[result.award.id];
+        const vqp = result.vestJuris.qualifiedPlans[result.award.id];
+        return (gqp && gqp.name) || (vqp && vqp.name);
       },
       onShow: () => {
         const text = result.grantJuris.qualifiedPlans[result.award.id]?.name ||
-                     result.vestJuris.qualifiedPlans[result.award.id]?.name;
-        document.getElementById('qualified-text').textContent = text;
+                     result.vestJuris.qualifiedPlans[result.award.id]?.name || '';
+        document.getElementById('qualified-text').textContent = text
+          ? `${text} — reduced rate may apply.`
+          : '';
       }
     },
     'cross-border-alert': {
@@ -2862,14 +2866,37 @@ function updateComparison(result) {
 }
 
 // Update rules
-function updateRules(rules) {
+function updateRules(result) {
+  const box  = document.getElementById('rules-list')?.closest('.rules-box');
   const list = document.getElementById('rules-list');
+  if (!list || !box) return;
+
+  const { allocation, grantJuris, vestJuris, award, rules = [] } = result;
+  const grantPct = Math.round((allocation?.grant ?? 0) * 100);
+  const vestPct  = Math.round((allocation?.vest  ?? 0) * 100);
+  const isSame   = grantJuris.displayName === vestJuris.displayName;
+
   list.innerHTML = '';
-  for (const rule of rules) {
+
+  // Always show the allocation split
+  const addLi = (text) => {
     const li = document.createElement('li');
-    li.textContent = rule;
+    li.textContent = text;
     list.appendChild(li);
+  };
+
+  if (isSame) {
+    addLi(`${grantJuris.displayName}: 100% — single jurisdiction, no allocation required.`);
+  } else {
+    addLi(`${grantJuris.displayName} (grant): ${grantPct}% of income sourced here.`);
+    addLi(`${vestJuris.displayName} (vest / resident): ${vestPct}% of income sourced here.`);
+    addLi(`Method: ${award.sourcingStrategy === 'pointInTimeGrant' ? 'Point-in-time at grant (83(b))' : 'Workday accrual — days worked in each location during vesting period.'}`);
   }
+
+  // Award-specific extra rules
+  for (const rule of rules) addLi(rule);
+
+  box.style.display = '';
 }
 
 // =====================================================
