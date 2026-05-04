@@ -1553,7 +1553,7 @@ const AwardRegistry = {
     fields: [
       { id: 'strike', label: 'Strike Price', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
       { id: 'fmv', label: 'FMV at Exercise', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
-      { id: 'shares', label: 'Shares Exercised', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' }
+      { id: 'shares', label: 'Shares Exercised', type: 'slider', min: 1, max: 50000, step: 1, default: 2000, format: 'int' }
     ],
     locLabels: { grant: 'Grant Location', vest: 'Exercise Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Exercise Loc.' },
     banner: {
@@ -1587,7 +1587,7 @@ const AwardRegistry = {
     fields: [
       { id: 'strike', label: 'Strike Price', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
       { id: 'fmv', label: 'FMV at Exercise', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
-      { id: 'shares', label: 'Shares Exercised', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' },
+      { id: 'shares', label: 'Shares Exercised', type: 'slider', min: 1, max: 50000, step: 1, default: 2000, format: 'int' },
       { id: 'isoDisposition', label: 'Disposition Type', type: 'select', default: 'disqualifying', options: [
         { value: 'disqualifying', label: 'Disqualifying — same-day sale (ordinary income)' },
         { value: 'qualifying', label: 'Qualifying — held >2y grant + >1y exercise (LTCG)' }
@@ -1634,7 +1634,7 @@ const AwardRegistry = {
     ],
     fields: [
       { id: 'fmv', label: 'FMV at Vest', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
-      { id: 'shares', label: 'Shares Vesting', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' }
+      { id: 'shares', label: 'Shares Vesting', type: 'slider', min: 1, max: 50000, step: 1, default: 2000, format: 'int' }
     ],
     locLabels: { grant: 'Grant Location', vest: 'Vest Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Vest Loc.' },
     banner: {
@@ -1667,7 +1667,7 @@ const AwardRegistry = {
       { id: 'fmv', label: 'FMV at Vest', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
       { id: 'fmvGrant', label: 'FMV at Grant', type: 'slider', min: 1, max: 500, step: 1, default: 15, format: 'dollar', dependsOn: { rsaElection: '83b' } },
       { id: 'amountPaid', label: 'Amount Paid for Shares', type: 'slider', min: 0, max: 50, step: 0.5, default: 0, format: 'dollar' },
-      { id: 'shares', label: 'Shares in Award', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' },
+      { id: 'shares', label: 'Shares in Award', type: 'slider', min: 1, max: 50000, step: 1, default: 2000, format: 'int' },
       { id: 'rsaElection', label: 'Tax Election', type: 'select', default: 'vest', options: [
         { value: 'vest', label: 'No election — taxed at vest (default)' },
         { value: '83b', label: 'Section 83(b) — taxed at grant date' }
@@ -1714,7 +1714,7 @@ const AwardRegistry = {
     ],
     fields: [
       { id: 'fmv', label: 'FMV at Vest', type: 'slider', min: 1, max: 500, step: 1, default: 60, format: 'dollar' },
-      { id: 'targetShares', label: 'Target Shares', type: 'slider', min: 100, max: 50000, step: 100, default: 3000, format: 'int' },
+      { id: 'targetShares', label: 'Target Shares', type: 'slider', min: 1, max: 50000, step: 1, default: 3000, format: 'int' },
       { id: 'performanceMultiplier', label: 'Performance Multiplier', type: 'slider', min: 0, max: 200, step: 5, default: 100, format: 'pct' }
     ],
     locLabels: { grant: 'Grant Location', vest: 'Vest Location', grantDays: 'Days in Grant Loc.', vestDays: 'Days in Vest Loc.' },
@@ -1754,7 +1754,7 @@ const AwardRegistry = {
       { id: 'purchasePrice', label: 'Purchase Price', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
       { id: 'fmvPurchase', label: 'FMV at Purchase', type: 'slider', min: 1, max: 200, step: 0.5, default: 10, format: 'dollar' },
       { id: 'fmvSale', label: 'FMV at Sale', type: 'slider', min: 1, max: 500, step: 1, default: 45, format: 'dollar' },
-      { id: 'shares', label: 'Shares Purchased', type: 'slider', min: 100, max: 50000, step: 100, default: 2000, format: 'int' }
+      { id: 'shares', label: 'Shares Purchased', type: 'slider', min: 1, max: 50000, step: 1, default: 2000, format: 'int' }
     ],
     locLabels: { grant: 'Offer Period Start', vest: 'Sale Location', grantDays: 'Days in Offer Period', vestDays: 'Days from Purchase to Sale' },
     banner: {
