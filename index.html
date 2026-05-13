@@ -916,6 +916,11 @@ body.mode-projection .concept-banner { display: none !important; }
             <strong>ℹ️ Double-Taxation Risk:</strong> Limited treaty relief available between these jurisdictions.
           </div>
 
+          <div class="advanced-only" id="mobility-impact-card" style="display:none;margin-bottom:16px;padding:12px;background:#0f172a;border:1px solid #334155;border-radius:8px;">
+            <div style="font-family:'DM Serif Display',serif;font-size:14px;margin-bottom:10px;color:#e2e8f0">Mobility Impact Analysis</div>
+            <div id="mobility-impact-body"></div>
+          </div>
+
           <div class="advanced-only">
             <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Tax Sourcing Breakdown</div>
             <table class="sourcing-table">
@@ -1955,6 +1960,103 @@ function updateAllocBar(result) {
 }
 
 // =====================================================
+// FILE IMPORT / EXPORT
+// =====================================================
+
+function importMobilityFile(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result.trim();
+    let rows;
+    if (file.name.endsWith('.json')) {
+      rows = parseMobilityJSON(text);
+    } else {
+      rows = parseMobilityCSV(text);
+    }
+    if (rows && rows.length >= 2) {
+      mobilityRows = rows;
+      renderMobilityTable();
+      calc();
+    } else {
+      alert('Import failed: need at least 2 rows with country, state, days.');
+    }
+  };
+  reader.readAsText(file);
+  inputEl.value = '';
+}
+
+function parseMobilityJSON(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) return null;
+    const rows = data.filter(r => r.country && r.state != null && typeof r.days === 'number' && r.days >= 0);
+    return rows.length >= 2 ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseMobilityCSV(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length < 2) return null;
+
+  // Detect header row
+  const firstRow = lines[0].split(',').map(c => c.trim());
+  let startIdx = 0;
+  const isHeader = isNaN(parseInt(firstRow[2])) && isNaN(parseInt(firstRow[firstRow.length - 1]));
+  if (isHeader) startIdx = 1;
+
+  const rows = [];
+  for (let i = startIdx; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim());
+    if (cols.length < 3) continue;
+
+    const country = cols[0];
+    const state = cols[1];
+    let days;
+
+    // 4 columns: treat as country, state, from_date, to_date
+    if (cols.length >= 4 && !isNaN(parseInt(cols[2])) === false) {
+      try {
+        const from = new Date(cols[2]);
+        const to = new Date(cols[3]);
+        days = Math.round((to - from) / (1000 * 60 * 60 * 24));
+      } catch {
+        days = 0;
+      }
+    } else {
+      // 3 columns: treat col3 as days
+      days = parseInt(cols[2]) || 0;
+    }
+
+    if (country && state && days > 0) {
+      rows.push({ country, state, days });
+    }
+  }
+
+  return rows.length >= 2 ? rows : null;
+}
+
+function exportMobilityCSV() {
+  let csv = 'country,state,days\n';
+  for (const row of mobilityRows) {
+    csv += `${row.country},${row.state},${row.days}\n`;
+  }
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'mobility.csv');
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// =====================================================
 // CALCULATION ENGINE
 // =====================================================
 const CalcEngine = {
@@ -2715,6 +2817,9 @@ function calc() {
   // Update alerts
   updateAlerts(result);
 
+  // Render mobility impact
+  renderMobilityImpact(result);
+
   // Update comparison
   updateComparison(result);
 
@@ -2760,6 +2865,77 @@ function renderTimeline(timeline) {
     label.textContent = event.label;
     bar.appendChild(label);
   }
+}
+
+// Render mobility impact panel
+function renderMobilityImpact(result) {
+  const card = document.getElementById('mobility-impact-card');
+  const body = document.getElementById('mobility-impact-body');
+
+  // Only show if multi-leg and legs are distinct
+  if (!result.legs || result.legs.length < 2) {
+    card.style.display = 'none';
+    return;
+  }
+
+  const allSame = result.legs.every(l => l.displayName === result.legs[0].displayName);
+  if (allSame) {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  body.innerHTML = '';
+
+  // Current scenario
+  const currentRow = document.createElement('div');
+  currentRow.className = 'mobility-impact-row';
+  currentRow.innerHTML = `
+    <span class="mobility-impact-label">Your Scenario:</span>
+    <span class="mobility-impact-val">${formatCurrency(result.totalTax)}</span>
+  `;
+  body.appendChild(currentRow);
+
+  // Grant baseline
+  const grantBaselineInputs = { ...getInputs() };
+  const grantLoc = result.legs[0];
+  const totalDays = result.legs.reduce((s, r) => s + (r.days || 0), 0);
+  grantBaselineInputs.mobility = [
+    { country: grantLoc.country, state: grantLoc.state, days: Math.floor(totalDays / 2) },
+    { country: grantLoc.country, state: grantLoc.state, days: Math.ceil(totalDays / 2) }
+  ];
+  const grantResult = CalcEngine.compute(grantBaselineInputs);
+  const grantDelta = grantResult.totalTax - result.totalTax;
+
+  const grantRow = document.createElement('div');
+  grantRow.className = 'mobility-impact-row';
+  const grantDeltaClass = grantDelta > 0 ? 'positive' : grantDelta < 0 ? 'negative' : 'neutral';
+  grantRow.innerHTML = `
+    <span class="mobility-impact-label">If always in ${grantLoc.displayName}:</span>
+    <span class="mobility-impact-val">${formatCurrency(grantResult.totalTax)}</span>
+    <span class="mobility-impact-delta ${grantDeltaClass}">${grantDelta >= 0 ? '▲ +' : '▼ '}${formatCurrency(Math.abs(grantDelta))}</span>
+  `;
+  body.appendChild(grantRow);
+
+  // Vest baseline
+  const vestLoc = result.legs[result.legs.length - 1];
+  const vestBaselineInputs = { ...getInputs() };
+  vestBaselineInputs.mobility = [
+    { country: vestLoc.country, state: vestLoc.state, days: Math.floor(totalDays / 2) },
+    { country: vestLoc.country, state: vestLoc.state, days: Math.ceil(totalDays / 2) }
+  ];
+  const vestResult = CalcEngine.compute(vestBaselineInputs);
+  const vestDelta = vestResult.totalTax - result.totalTax;
+
+  const vestRow = document.createElement('div');
+  vestRow.className = 'mobility-impact-row';
+  const vestDeltaClass = vestDelta > 0 ? 'positive' : vestDelta < 0 ? 'negative' : 'neutral';
+  vestRow.innerHTML = `
+    <span class="mobility-impact-label">If always in ${vestLoc.displayName}:</span>
+    <span class="mobility-impact-val">${formatCurrency(vestResult.totalTax)}</span>
+    <span class="mobility-impact-delta ${vestDeltaClass}">${vestDelta >= 0 ? '▲ +' : '▼ '}${formatCurrency(Math.abs(vestDelta))}</span>
+  `;
+  body.appendChild(vestRow);
 }
 
 // Render summary cards
