@@ -702,6 +702,32 @@ body.mode-projection .concept-banner { display: none !important; }
 .proj-table td.right { text-align: right; }
 .proj-table tr.proj-total td { background: var(--bg-soft); font-weight: 600; border-top: 1px solid var(--border); }
 .proj-table tr.proj-skip td { color: var(--text-subtle); font-size: 12px; }
+
+/* Mobility table and allocation bar */
+.mobility-section { margin: 16px 0; }
+.mobility-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; }
+.mobility-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mobility-table th { background: #1e293b; color: #94a3b8; font-weight: 500; padding: 6px 8px; text-align: left; }
+.mobility-table td { padding: 5px 6px; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+.mobility-table select, .mobility-table input[type=number] { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 4px; padding: 3px 6px; font-size: 12px; width: 100%; font-family: 'DM Mono', monospace; }
+.mobility-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 9px; text-transform: uppercase; }
+.mobility-badge.source { background: rgba(245, 158, 11, 0.13); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.33); }
+.mobility-badge.resident { background: rgba(14, 165, 233, 0.13); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.33); }
+.mobility-alloc-pct { font-size: 12px; color: #94a3b8; text-align: right; }
+.mobility-row-remove { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 2px 6px; }
+.mobility-row-remove:disabled { color: #334155; cursor: default; }
+.mobility-add-row { background: none; border: 1px dashed #334155; color: #64748b; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; margin-top: 8px; }
+.mobility-add-row:hover { border-color: #64748b; color: #94a3b8; }
+.mobility-import-btn { background: none; border: 1px solid #334155; color: #64748b; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; margin-left: 8px; }
+.mobility-import-btn:hover { border-color: #64748b; color: #94a3b8; }
+.alloc-bar-multi { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0 4px; }
+.alloc-segment { height: 100%; transition: width 0.3s; }
+.mobility-impact-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #1e293b; }
+.mobility-impact-label { color: #94a3b8; }
+.mobility-impact-val { font-weight: 600; }
+.mobility-impact-delta.positive { color: #22c55e; }
+.mobility-impact-delta.negative { color: #ef4444; }
+.mobility-impact-delta.neutral { color: #64748b; }
 </style>
 </head>
 <body>
@@ -768,59 +794,33 @@ body.mode-projection .concept-banner { display: none !important; }
             <span class="info-tag" id="loc-info">Workday Sourcing</span>
           </div>
 
-          <div class="juris-grid">
-            <div class="juris-card grant">
-              <div class="juris-tag grant">
-                <span>📍 <span id="grant-loc-label">Grant Location</span></span>
-                <span class="rate-pill" id="grant-rate-display">—</span>
+          <div class="mobility-section" id="mobility-section">
+            <div class="mobility-header">
+              <span>Mobility — Locations & Days Worked</span>
+              <div>
+                <span id="mobility-total-days-badge" style="font-size:12px;color:#64748b;font-weight:400"></span>
+                <button class="mobility-import-btn" onclick="document.getElementById('mobility-file-input').click()">⬆ Import</button>
+                <button class="mobility-import-btn" onclick="exportMobilityCSV()">⬇ Export</button>
+                <input type="file" id="mobility-file-input" accept=".csv,.json" style="display:none" onchange="importMobilityFile(this)">
               </div>
-              <div class="dual-select">
-                <select id="grant-country" onchange="onCountryChange('grant');calc()"></select>
-                <select id="grant-state" onchange="calc()"></select>
-              </div>
-              <div id="grant-qualified-pill"></div>
             </div>
-
-            <div class="juris-card vest">
-              <div class="juris-tag vest">
-                <span>📍 <span id="vest-loc-label">Vest Location</span></span>
-                <span class="rate-pill" id="vest-rate-display">—</span>
-              </div>
-              <div class="dual-select">
-                <select id="vest-country" onchange="onCountryChange('vest');calc()"></select>
-                <select id="vest-state" onchange="calc()"></select>
-              </div>
-              <div id="vest-qualified-pill"></div>
+            <table class="mobility-table">
+              <thead><tr><th>Country</th><th>State/Province</th><th>Days</th><th>Alloc %</th><th>Role</th><th></th></tr></thead>
+              <tbody id="mobility-tbody"></tbody>
+            </table>
+            <button class="mobility-add-row" onclick="addMobilityRow()">+ Add Location</button>
+            <div class="alloc-row advanced-only" style="margin-top:12px">
+              <div class="alloc-title">Income Allocation</div>
+              <div id="alloc-bar-multi-container" class="alloc-bar-multi"></div>
+              <div id="alloc-meta-container" style="font-size:11px;color:#64748b"></div>
             </div>
           </div>
 
-          <div class="field">
-            <label><span id="grant-days-label">Days in Grant Loc.</span> <span class="val-badge" id="sv-gdays">500</span></label>
-            <div class="slider-row">
-              <input type="range" id="grant-days" min="0" max="1500" step="1" value="500" oninput="syncDays('grant',this);calc()">
-              <input type="number" id="grant-days-num" min="0" max="1500" step="1" value="500" oninput="syncDays('grant',this);calc()" style="width:72px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:3px;font-family:'DM Mono',monospace;background:white;color:var(--ink);text-align:center;">
-            </div>
-          </div>
-
-          <div class="field">
-            <label><span id="vest-days-label">Days in Vest Loc.</span> <span class="val-badge" id="sv-vdays">500</span></label>
-            <div class="slider-row">
-              <input type="range" id="vest-days" min="0" max="1500" step="1" value="500" oninput="syncDays('vest',this);calc()">
-              <input type="number" id="vest-days-num" min="0" max="1500" step="1" value="500" oninput="syncDays('vest',this);calc()" style="width:72px;padding:5px 7px;font-size:12px;border:1px solid var(--border);border-radius:3px;font-family:'DM Mono',monospace;background:white;color:var(--ink);text-align:center;">
-            </div>
-          </div>
-
-          <div class="alloc-row advanced-only">
-            <div class="alloc-title">Income Allocation Ratio</div>
-            <div class="alloc-bar-container">
-              <div class="alloc-bar-grant" id="alloc-bar-grant" style="width:50%"><span class="alloc-bar-label" id="alloc-pct-grant">50%</span></div>
-              <div class="alloc-bar-vest" id="alloc-bar-vest" style="width:50%"><span class="alloc-bar-label" id="alloc-pct-vest">50%</span></div>
-            </div>
-            <div class="alloc-meta">
-              <span id="alloc-label-grant" style="color:var(--grant-color)">Grant: 50%</span>
-              <span id="alloc-label-vest" style="color:var(--vest-color)">Vest: 50%</span>
-            </div>
-          </div>
+          <!-- Hidden legacy inputs — kept for getInputs() backward compat -->
+          <input type="hidden" id="grant-country"><input type="hidden" id="grant-state">
+          <input type="hidden" id="vest-country"><input type="hidden" id="vest-state">
+          <input type="hidden" id="grant-days"><input type="hidden" id="grant-days-num">
+          <input type="hidden" id="vest-days"><input type="hidden" id="vest-days-num">
 
           <hr class="divider">
           <div class="sec-label">Common Tax Parameters</div>
@@ -1255,8 +1255,13 @@ const SourcingStrategyRegistry = {
     name: 'Workday Accrual',
     description: 'Allocates between jurisdictions based on working days during sourcing period',
     compute(inputs) {
+      if (inputs.mobility?.length >= 2) {
+        const total = inputs.mobility.reduce((s, r) => s + (r.days || 0), 0) || 1;
+        const perLeg = inputs.mobility.map(r => (r.days || 0) / total);
+        return { grant: perLeg[0], vest: perLeg[perLeg.length - 1], perLeg };
+      }
       const total = inputs.grantDays + inputs.vestDays || 1;
-      return { grant: inputs.grantDays / total, vest: inputs.vestDays / total };
+      return { grant: inputs.grantDays / total, vest: inputs.vestDays / total, perLeg: null };
     }
   },
 
@@ -1784,14 +1789,200 @@ const AwardRegistry = {
 };
 
 // =====================================================
+// MOBILITY STATE MODEL
+// =====================================================
+const MOBILITY_COLORS = ['#f59e0b','#a855f7','#0ea5e9','#22c55e','#f97316','#6366f1'];
+
+let mobilityRows = [
+  { country: 'US', state: 'CA', days: 500 },
+  { country: 'US', state: 'CA', days: 500 }
+];
+
+// =====================================================
+// MOBILITY TABLE FUNCTIONS
+// =====================================================
+
+function renderMobilityTable() {
+  const tbody = document.getElementById('mobility-tbody');
+  const totalDays = mobilityRows.reduce((s, r) => s + (r.days || 0), 0) || 1;
+
+  tbody.innerHTML = '';
+  mobilityRows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    const isLast = i === mobilityRows.length - 1;
+    const role = isLast ? 'RESIDENT' : 'SOURCE';
+    const allocPct = ((row.days || 0) / totalDays * 100).toFixed(1);
+
+    const countrySelect = document.createElement('select');
+    countrySelect.onchange = (e) => onMobilityCountryChange(i, e.target.value);
+    Object.entries(JurisdictionRegistry.countries).forEach(([code, juris]) => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = code;
+      countrySelect.appendChild(opt);
+    });
+    countrySelect.value = row.country || 'US';
+
+    const stateSelect = document.createElement('select');
+    stateSelect.onchange = (e) => onMobilityChange(i, 'state', e.target.value);
+    populateMobilityStateOptions(i, stateSelect, row.country);
+
+    const daysInput = document.createElement('input');
+    daysInput.type = 'number';
+    daysInput.min = '1';
+    daysInput.max = '1500';
+    daysInput.value = row.days || 0;
+    daysInput.onchange = (e) => onMobilityChange(i, 'days', parseInt(e.target.value) || 0);
+
+    const allocCell = document.createElement('td');
+    allocCell.className = 'mobility-alloc-pct';
+    allocCell.textContent = allocPct + '%';
+
+    const roleBadge = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = `mobility-badge ${role.toLowerCase()}`;
+    badge.textContent = role;
+    roleBadge.appendChild(badge);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'mobility-row-remove';
+    removeBtn.innerHTML = '✕';
+    removeBtn.disabled = mobilityRows.length <= 2;
+    removeBtn.onclick = () => removeMobilityRow(i);
+
+    tr.appendChild(document.createElement('td')).appendChild(countrySelect);
+    tr.appendChild(document.createElement('td')).appendChild(stateSelect);
+    tr.appendChild(document.createElement('td')).appendChild(daysInput);
+    tr.appendChild(allocCell);
+    tr.appendChild(roleBadge);
+    tr.appendChild(document.createElement('td')).appendChild(removeBtn);
+
+    tbody.appendChild(tr);
+  });
+
+  // Update total days badge
+  document.getElementById('mobility-total-days-badge').textContent = `Total: ${totalDays} days`;
+
+  // Update hidden inputs for backward compat
+  document.getElementById('grant-country').value = mobilityRows[0]?.country || 'US';
+  document.getElementById('grant-state').value = mobilityRows[0]?.state || '';
+  document.getElementById('grant-days').value = mobilityRows[0]?.days || 0;
+  document.getElementById('grant-days-num').value = mobilityRows[0]?.days || 0;
+
+  const lastIdx = mobilityRows.length - 1;
+  document.getElementById('vest-country').value = mobilityRows[lastIdx]?.country || 'US';
+  document.getElementById('vest-state').value = mobilityRows[lastIdx]?.state || '';
+  document.getElementById('vest-days').value = mobilityRows[lastIdx]?.days || 0;
+  document.getElementById('vest-days-num').value = mobilityRows[lastIdx]?.days || 0;
+}
+
+function populateMobilityStateOptions(rowIdx, selectEl, country) {
+  selectEl.innerHTML = '';
+
+  if (country === 'US') {
+    Object.entries(JurisdictionRegistry.usStates).forEach(([code, state]) => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = code;
+      selectEl.appendChild(opt);
+    });
+  } else {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '—';
+    selectEl.appendChild(opt);
+  }
+
+  selectEl.value = mobilityRows[rowIdx]?.state || '';
+}
+
+function addMobilityRow() {
+  if (mobilityRows.length < 1) return;
+  const lastRow = mobilityRows[mobilityRows.length - 1];
+  const newRow = { country: lastRow.country, state: lastRow.state, days: 200 };
+  mobilityRows.splice(mobilityRows.length - 1, 0, newRow);
+  renderMobilityTable();
+  calc();
+}
+
+function removeMobilityRow(i) {
+  if (mobilityRows.length <= 2) return;
+  mobilityRows.splice(i, 1);
+  renderMobilityTable();
+  calc();
+}
+
+function onMobilityChange(i, field, value) {
+  mobilityRows[i][field] = value;
+  renderMobilityTable();
+  calc();
+}
+
+function onMobilityCountryChange(i, value) {
+  mobilityRows[i].country = value;
+  mobilityRows[i].state = '';
+  renderMobilityTable();
+  calc();
+}
+
+function updateAllocBar(result) {
+  const container = document.getElementById('alloc-bar-multi-container');
+  const metaContainer = document.getElementById('alloc-meta-container');
+
+  if (!result.legs || result.legs.length < 2) {
+    container.innerHTML = '';
+    metaContainer.innerHTML = '';
+    return;
+  }
+
+  const perLeg = result.allocation.perLeg || [result.allocation.grant, result.allocation.vest];
+  container.innerHTML = '';
+  metaContainer.innerHTML = '';
+
+  result.legs.forEach((leg, i) => {
+    const pct = (perLeg[i] * 100).toFixed(0);
+    const segment = document.createElement('div');
+    segment.className = 'alloc-segment';
+    segment.style.width = pct + '%';
+    segment.style.backgroundColor = MOBILITY_COLORS[i % MOBILITY_COLORS.length];
+    container.appendChild(segment);
+
+    const label = document.createElement('span');
+    label.style.marginRight = '12px';
+    label.innerHTML = `<span style="color:${MOBILITY_COLORS[i % MOBILITY_COLORS.length]}">●</span> ${leg.displayName}: ${pct}%`;
+    metaContainer.appendChild(label);
+  });
+}
+
+// =====================================================
 // CALCULATION ENGINE
 // =====================================================
 const CalcEngine = {
   compute(inputs) {
-    // 1. Resolve jurisdictions
-    const grantJuris = JurisdictionRegistry.resolve(inputs.grantCountry, inputs.grantState);
-    const vestJuris = JurisdictionRegistry.resolve(inputs.vestCountry, inputs.vestState);
-    if (!grantJuris || !vestJuris) return { error: 'Invalid jurisdiction' };
+    // 1. Build legs array from mobility data
+    let legs = [];
+    if (inputs.mobility?.length >= 2) {
+      legs = inputs.mobility.map(m => ({
+        country: m.country,
+        state: m.state,
+        days: m.days,
+        juris: JurisdictionRegistry.resolve(m.country, m.state),
+        displayName: m.state || m.country
+      }));
+    } else {
+      // Fallback to grant/vest for backward compat
+      legs = [
+        { country: inputs.grantCountry, state: inputs.grantState, days: inputs.grantDays,
+          juris: JurisdictionRegistry.resolve(inputs.grantCountry, inputs.grantState),
+          displayName: inputs.grantState || inputs.grantCountry },
+        { country: inputs.vestCountry, state: inputs.vestState, days: inputs.vestDays,
+          juris: JurisdictionRegistry.resolve(inputs.vestCountry, inputs.vestState),
+          displayName: inputs.vestState || inputs.vestCountry }
+      ];
+    }
+
+    // Validate all legs resolved successfully
+    if (legs.some(l => !l.juris)) return { error: 'Invalid jurisdiction in mobility' };
 
     // 2. Get award definition
     const award = AwardRegistry[inputs.awardType];
@@ -1800,7 +1991,7 @@ const CalcEngine = {
     // 3. Compute taxable income
     const income = award.computeIncome(inputs);
 
-    // 4. Determine sourcing strategy (award may override)
+    // 4. Determine sourcing strategy and allocation
     let sourcingStrategyId = award.sourcingStrategy;
     if (award.overrideSourcingStrategy) {
       const override = award.overrideSourcingStrategy(inputs);
@@ -1808,65 +1999,77 @@ const CalcEngine = {
     }
     const sourcingStrategy = SourcingStrategyRegistry[sourcingStrategyId];
     const allocation = sourcingStrategy.compute(inputs);
+    const perLeg = allocation.perLeg || [allocation.grant, allocation.vest];
 
-    // 5. Run tax components for each jurisdiction
+    // 5. Determine resident jurisdiction (last leg)
+    const residentJuris = legs[legs.length - 1].juris;
+    const grantJuris = legs[0].juris;
+    const vestJuris = residentJuris;
+
+    // 6. Check if all legs are same jurisdiction
+    const allSameJuris = legs.every(l => {
+      if (l.juris.isUS && residentJuris.isUS) return l.juris.stateCode === residentJuris.stateCode;
+      if (!l.juris.isUS && !residentJuris.isUS) return l.juris.countryCode === residentJuris.countryCode;
+      return false;
+    });
+
+    // 7. Phase A: Source taxes for all non-resident legs
     const taxResults = [];
-    const jurisList = [grantJuris, vestJuris];
+    let allSourceStateTax = 0;
+    let allSourceForeignTax = 0;
 
-    // Detect if grant and vest are the same jurisdiction (to avoid double-counting source/resident)
-    const isSameJuris = (grantJuris.isUS && vestJuris.isUS && grantJuris.stateCode === vestJuris.stateCode) ||
-                        (!grantJuris.isUS && !vestJuris.isUS && grantJuris.countryCode === vestJuris.countryCode);
+    for (let i = 0; i < legs.length - 1; i++) {
+      const leg = legs[i];
+      const legAllocPct = perLeg[i];
+      const legAllocatedIncome = income.ordinaryIncome * legAllocPct;
 
-    // Phase A: Source taxes for the GRANT jurisdiction only — skipped when grant === vest
-    // (same-jurisdiction: no source allocation needed, Phase B resident handles it entirely)
-    const grantAllocatedIncome = income.ordinaryIncome * allocation.grant;
-    if (!isSameJuris) {
+      // Skip if leg jurisdiction == resident jurisdiction
+      const isSameLoc = (leg.juris.isUS && residentJuris.isUS && leg.juris.stateCode === residentJuris.stateCode) ||
+                        (!leg.juris.isUS && !residentJuris.isUS && leg.juris.countryCode === residentJuris.countryCode);
+      if (isSameLoc) continue;
+
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: grantAllocatedIncome })) continue;
+        if (!comp.applies({ juris: leg.juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: legAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0 })) continue;
         const result = comp.compute({
-          juris: grantJuris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome,
-          allocatedIncome: grantAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0
+          juris: leg.juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome,
+          allocatedIncome: legAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0
         });
-        taxResults.push({ ...result, scope: 'source', allocPct: allocation.grant });
+        taxResults.push({ ...result, scope: 'source', allocPct: legAllocPct, legIndex: i });
+
+        // Accumulate source taxes for credit
+        if (leg.juris.isUS && result.juris === leg.juris.stateCode) allSourceStateTax += result.tax;
+        if (!leg.juris.isUS && result.label.includes('Income')) allSourceForeignTax += result.tax;
       }
     }
 
-    // Phase B: Resident + full scopes for vest jurisdiction.
-    // Capture grant source taxes first so the resident components can apply credits.
-    const grantSourceStateTax = taxResults.find(r => r.juris === grantJuris.stateCode && r.scope === 'source')?.tax || 0;
-    const grantForeignIncomeTax = taxResults.find(r => r.juris === grantJuris.shortCode && r.scope === 'source' && r.label.includes('Income'))?.tax || 0;
+    // 8. Phase B: Resident + full scopes for resident jurisdiction
+    const residentAllocPct = perLeg[perLeg.length - 1];
+    const residentAllocatedIncome = income.ordinaryIncome * residentAllocPct;
+    const scopesForResident = ['resident', 'full'];
 
-    const vestAllocPct = allocation.vest;
-    const vestAllocatedIncome = income.ordinaryIncome * vestAllocPct;
-    const scopesForVest = ['resident', 'full'];
-
-    for (const scope of scopesForVest) {
+    for (const scope of scopesForResident) {
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome, sourceStateTax: grantSourceStateTax, sourceForeignIncomeTax: grantForeignIncomeTax })) continue;
+        if (!comp.applies({ juris: residentJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: residentAllocatedIncome, sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax })) continue;
         const result = comp.compute({
-          juris: vestJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: vestAllocatedIncome,
-          sourceStateTax: grantSourceStateTax,
-          sourceForeignIncomeTax: grantForeignIncomeTax
+          juris: residentJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: residentAllocatedIncome,
+          sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax
         });
-        taxResults.push({ ...result, scope, allocPct: vestAllocPct });
+        taxResults.push({ ...result, scope, allocPct: residentAllocPct, legIndex: legs.length - 1 });
       }
     }
 
-    // 6. Handle capital gains (e.g., ISO qualifying, ESPP appreciation)
+    // 9. Handle capital gains (sourced to resident/vest location)
     if (income.capitalGain > 0) {
-      // Capital gains are sourced to vest location (where asset is sold)
-      const allocatedCG = income.capitalGain;
-
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG, sourceForeignIncomeTax: grantForeignIncomeTax })) continue;
+        if (!comp.applies({ juris: residentJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: income.capitalGain, sourceForeignIncomeTax: allSourceForeignTax })) continue;
         const result = comp.compute({
-          juris: vestJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: allocatedCG, sourceForeignIncomeTax: grantForeignIncomeTax
+          juris: residentJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: income.capitalGain, sourceForeignIncomeTax: allSourceForeignTax
         });
-        taxResults.push({ ...result, scope: 'capital_gain', allocPct: allocation.vest });
+        taxResults.push({ ...result, scope: 'capital_gain', allocPct: residentAllocPct, legIndex: legs.length - 1 });
       }
     }
 
-    // 7. Aggregate and apply credits
+    // 10. Aggregate and apply credits
     const aggregated = {};
     for (const r of taxResults) {
       const key = r.juris + '|' + r.label;
@@ -1878,31 +2081,37 @@ const CalcEngine = {
       ...r, net: Math.round((r.tax - r.credit) * 100) / 100
     }));
 
-    // 8. Compute totals (with rounding to cents)
+    // 11. Compute totals
     const totalTax = Math.round(finalTaxResults.reduce((sum, r) => sum + r.net, 0) * 100) / 100;
     const netCash = Math.round((income.proceeds - totalTax - income.exerciseCost) * 100) / 100;
 
-    // 9. Build comparison baselines (skip if already same location to avoid infinite recursion)
-    const baselineGrant = !isSameJuris ? this.computeBaseline(inputs, 'grant') : { totalTax, netCash };
-    const baselineVest = !isSameJuris ? this.computeBaseline(inputs, 'vest') : { totalTax, netCash };
+    // 12. Build comparison baselines
+    const baselineGrant = !allSameJuris ? this.computeBaseline(inputs, 'grant') : { totalTax, netCash };
+    const baselineVest = !allSameJuris ? this.computeBaseline(inputs, 'vest') : { totalTax, netCash };
 
     return {
       award, grantJuris, vestJuris, allocation, income, taxResults: finalTaxResults,
-      totalTax, netCash, baselineGrant, baselineVest,
+      totalTax, netCash, baselineGrant, baselineVest, legs,
       rules: award.extraRules ? award.extraRules(inputs, grantJuris, vestJuris) : []
     };
   },
 
   computeBaseline(inputs, fixedLoc) {
     const baselineInputs = { ...inputs };
+    const totalDays = inputs.mobility?.reduce((s, r) => s + r.days, 0) || (inputs.grantDays + inputs.vestDays);
+
     if (fixedLoc === 'grant') {
-      baselineInputs.vestCountry = inputs.grantCountry;
-      baselineInputs.vestState = inputs.grantState;
-      baselineInputs.vestDays = inputs.grantDays;
+      const fixLoc = inputs.mobility?.[0] || { country: inputs.grantCountry, state: inputs.grantState };
+      baselineInputs.mobility = [
+        { country: fixLoc.country, state: fixLoc.state, days: Math.floor(totalDays / 2) },
+        { country: fixLoc.country, state: fixLoc.state, days: Math.ceil(totalDays / 2) }
+      ];
     } else {
-      baselineInputs.grantCountry = inputs.vestCountry;
-      baselineInputs.grantState = inputs.vestState;
-      baselineInputs.grantDays = inputs.vestDays;
+      const fixLoc = inputs.mobility?.[inputs.mobility.length - 1] || { country: inputs.vestCountry, state: inputs.vestState };
+      baselineInputs.mobility = [
+        { country: fixLoc.country, state: fixLoc.state, days: Math.floor(totalDays / 2) },
+        { country: fixLoc.country, state: fixLoc.state, days: Math.ceil(totalDays / 2) }
+      ];
     }
     const result = this.compute(baselineInputs);
     return { totalTax: result.totalTax, netCash: result.netCash };
@@ -1950,22 +2159,23 @@ function applyState(state) {
   if (!state) return;
   isApplyingState = true;
 
+  // Hydrate mobility data
+  if (state.mobility?.length >= 2) {
+    mobilityRows = state.mobility;
+  } else if (state.grantCountry) {
+    // Backward compat with old URLs
+    mobilityRows = [
+      { country: state.grantCountry, state: state.grantState || '', days: state.grantDays || 500 },
+      { country: state.vestCountry || 'US', state: state.vestState || '', days: state.vestDays || 500 }
+    ];
+  }
+  renderMobilityTable();
+
   if (state.awardType && AwardRegistry[state.awardType]) {
     selectAward(state.awardType);
   }
 
-  if (state.grantCountry) document.getElementById('grant-country').value = state.grantCountry;
-  if (state.vestCountry) document.getElementById('vest-country').value = state.vestCountry;
-  populateStateOptions('grant');
-  populateStateOptions('vest');
-  if (state.grantState != null) document.getElementById('grant-state').value = state.grantState;
-  if (state.vestState != null) document.getElementById('vest-state').value = state.vestState;
-
   const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
-  setVal('grant-days', state.grantDays);
-  setVal('grant-days-num', state.grantDays);
-  setVal('vest-days', state.vestDays);
-  setVal('vest-days-num', state.vestDays);
   setVal('fed-rate', state.fedRate);
   setVal('ltcg-rate', state.ltcgRate);
   setVal('city-rate', state.cityRate);
@@ -2444,12 +2654,13 @@ function calcBracketBreakdown(ytdIncome, exerciseIncome) {
 function getInputs() {
   const inputs = {
     awardType: getCurrentAward().id,
-    grantCountry: document.getElementById('grant-country').value,
-    grantState: document.getElementById('grant-state').value,
-    vestCountry: document.getElementById('vest-country').value,
-    vestState: document.getElementById('vest-state').value,
-    grantDays: parseInt(document.getElementById('grant-days').value),
-    vestDays: parseInt(document.getElementById('vest-days').value),
+    grantCountry: mobilityRows[0]?.country || 'US',
+    grantState: mobilityRows[0]?.state || '',
+    vestCountry: mobilityRows[mobilityRows.length - 1]?.country || 'US',
+    vestState: mobilityRows[mobilityRows.length - 1]?.state || '',
+    grantDays: mobilityRows[0]?.days || 0,
+    vestDays: mobilityRows[mobilityRows.length - 1]?.days || 0,
+    mobility: mobilityRows.map(r => ({ country: r.country, state: r.state, days: r.days })),
     fedRate: parseFloat(document.getElementById('fed-rate')?.value) || 0.24,
     ltcgRate: parseFloat(document.getElementById('ltcg-rate').value),
     niitRate: document.getElementById('niit-toggle').value === '0' ? 0 : 0.038,
@@ -2479,16 +2690,8 @@ function calc() {
     return;
   }
 
-  // Update allocation bar
-  const alloc = result.allocation;
-  const grantPct = Math.round(alloc.grant * 1000) / 10;  // Round to 1 decimal
-  const vestPct = Math.round(alloc.vest * 1000) / 10;
-  document.getElementById('alloc-bar-grant').style.width = (alloc.grant * 100) + '%';
-  document.getElementById('alloc-bar-vest').style.width = (alloc.vest * 100) + '%';
-  document.getElementById('alloc-pct-grant').textContent = grantPct + '%';
-  document.getElementById('alloc-pct-vest').textContent = vestPct + '%';
-  document.getElementById('alloc-label-grant').textContent = `Grant: ${grantPct}%`;
-  document.getElementById('alloc-label-vest').textContent = `Vest: ${vestPct}%`;
+  // Update allocation bar (multi-leg support)
+  updateAllocBar(result);
 
   // Update qualified pills
   updateQualifiedPill('grant', result.grantJuris, result.award);
@@ -2836,12 +3039,23 @@ function updateAlerts(result) {
     },
     'cross-border-alert': {
       condition: () => {
-        return result.grantJuris.countryCode !== result.vestJuris.countryCode ||
-               (result.grantJuris.stateCode !== result.vestJuris.stateCode && result.grantJuris.isUS);
+        // Check if any non-resident leg differs from resident
+        if (!result.legs || result.legs.length < 2) return false;
+        const residentLeg = result.legs[result.legs.length - 1];
+        for (let i = 0; i < result.legs.length - 1; i++) {
+          const leg = result.legs[i];
+          if (leg.juris.countryCode !== residentLeg.juris.countryCode ||
+              (leg.juris.stateCode !== residentLeg.juris.stateCode && leg.juris.isUS)) {
+            return true;
+          }
+        }
+        return false;
       },
       onShow: () => {
-        document.getElementById('cross-text').textContent =
-          `Grant in ${result.grantJuris.displayName}, vest in ${result.vestJuris.displayName}.`;
+        if (result.legs && result.legs.length > 1) {
+          const locNames = result.legs.map(l => l.displayName).join(' → ');
+          document.getElementById('cross-text').textContent = `Mobility: ${locNames}`;
+        }
       }
     },
     'amt-alert': {
@@ -2852,7 +3066,16 @@ function updateAlerts(result) {
       }
     },
     'double-tax-alert': {
-      condition: () => result.grantJuris.countryCode !== result.vestJuris.countryCode && !result.grantJuris.treatyWithUS
+      condition: () => {
+        if (!result.legs) return false;
+        const residentLeg = result.legs[result.legs.length - 1];
+        for (let i = 0; i < result.legs.length - 1; i++) {
+          if (result.legs[i].juris.countryCode !== residentLeg.juris.countryCode && !result.legs[i].juris.treatyWithUS) {
+            return true;
+          }
+        }
+        return false;
+      }
     }
   };
 
@@ -2893,26 +3116,32 @@ function updateRules(result) {
   const list = document.getElementById('rules-list');
   if (!list || !box) return;
 
-  const { allocation, grantJuris, vestJuris, award, rules = [] } = result;
-  const grantPct = Math.round((allocation?.grant ?? 0) * 100);
-  const vestPct  = Math.round((allocation?.vest  ?? 0) * 100);
-  const isSame   = grantJuris.displayName === vestJuris.displayName;
+  const { allocation, grantJuris, vestJuris, award, rules = [], legs = [] } = result;
+  const perLeg = allocation.perLeg || [allocation.grant, allocation.vest];
 
   list.innerHTML = '';
 
-  // Always show the allocation split
   const addLi = (text) => {
     const li = document.createElement('li');
     li.textContent = text;
     list.appendChild(li);
   };
 
-  if (isSame) {
-    addLi(`${grantJuris.displayName}: 100% — single jurisdiction, no allocation required.`);
-  } else {
-    addLi(`${grantJuris.displayName} (grant): ${grantPct}% of income sourced here.`);
-    addLi(`${vestJuris.displayName} (vest / resident): ${vestPct}% of income sourced here.`);
-    addLi(`Method: ${award.sourcingStrategy === 'pointInTimeGrant' ? 'Point-in-time at grant (83(b))' : 'Workday accrual — days worked in each location during vesting period.'}`);
+  // Show allocation for each leg
+  if (legs.length > 0) {
+    const allSame = legs.every(l => l.displayName === legs[0].displayName);
+    if (allSame) {
+      addLi(`${legs[0].displayName}: 100% — single jurisdiction, no allocation required.`);
+    } else {
+      for (let i = 0; i < legs.length; i++) {
+        const leg = legs[i];
+        const pct = Math.round((perLeg[i] ?? 0) * 100);
+        const days = leg.days || 0;
+        const role = i === legs.length - 1 ? 'resident' : 'source';
+        addLi(`${leg.displayName} (${role}): ${pct}% (${days} days)`);
+      }
+      addLi(`Method: ${award.sourcingStrategy === 'pointInTimeGrant' ? 'Point-in-time at grant (83(b))' : 'Workday accrual — days worked in each location.'}`);
+    }
   }
 
   // Award-specific extra rules
