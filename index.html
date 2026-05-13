@@ -2494,12 +2494,6 @@ function selectAward(awardId) {
   document.querySelectorAll('.award-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.award-tab')[Object.keys(AwardRegistry).indexOf(awardId)].classList.add('active');
 
-  // Update labels
-  document.getElementById('grant-loc-label').textContent = award.locLabels.grant;
-  document.getElementById('vest-loc-label').textContent = award.locLabels.vest;
-  document.getElementById('grant-days-label').textContent = award.locLabels.grantDays;
-  document.getElementById('vest-days-label').textContent = award.locLabels.vestDays;
-
   // Update banner
   document.getElementById('cb-event').textContent = award.banner.event;
   document.getElementById('cb-source').textContent = award.banner.source;
