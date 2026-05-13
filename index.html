@@ -2297,11 +2297,6 @@ function applyState(state) {
     }
   }
 
-  updateRateDisplay('grant');
-  updateRateDisplay('vest');
-  if (document.getElementById('grant-days')) syncDays('grant', document.getElementById('grant-days'));
-  if (document.getElementById('vest-days')) syncDays('vest', document.getElementById('vest-days'));
-
   isApplyingState = false;
   calc();
 }
@@ -2385,7 +2380,7 @@ function refreshScenariosDropdown() {
 function init() {
   setMode('simple');  // Start in simple mode
   renderAwardTabs();
-  renderJurisdictionSelectors();
+  renderMobilityTable();
   renderScenarioChips();
   selectAward('NQ');
   calc();
@@ -2612,80 +2607,6 @@ function updateBadge(id, value) {
 }
 
 // Render jurisdiction selectors
-function renderJurisdictionSelectors() {
-  const countries = Object.keys(JurisdictionRegistry.countries).sort();
-  const grantCountry = document.getElementById('grant-country');
-  const vestCountry = document.getElementById('vest-country');
-
-  grantCountry.innerHTML = '<option value="">Select Country</option>';
-  vestCountry.innerHTML = '<option value="">Select Country</option>';
-
-  for (const code of countries) {
-    const name = JurisdictionRegistry.countries[code].name;
-    grantCountry.innerHTML += `<option value="${code}">${name}</option>`;
-    vestCountry.innerHTML += `<option value="${code}">${name}</option>`;
-  }
-
-  // Default to a valid starting jurisdiction so results load immediately.
-  grantCountry.value = 'US';
-  vestCountry.value = 'US';
-  populateStateOptions('grant');
-  populateStateOptions('vest');
-  document.getElementById('grant-state').value = 'CA';
-  document.getElementById('vest-state').value = 'CA';
-  updateRateDisplay('grant');
-  updateRateDisplay('vest');
-}
-
-function populateStateOptions(side) {
-  const countryCode = document.getElementById(side + '-country').value;
-  const stateSelect = document.getElementById(side + '-state');
-  stateSelect.innerHTML = '<option value="">Select State/Province</option>';
-
-  if (countryCode === 'US') {
-    const states = Object.keys(JurisdictionRegistry.usStates).sort((a,b) => JurisdictionRegistry.usStates[a].name.localeCompare(JurisdictionRegistry.usStates[b].name));
-    for (const code of states) {
-      const name = JurisdictionRegistry.usStates[code].name;
-      stateSelect.innerHTML += `<option value="${code}">${name}</option>`;
-    }
-  } else {
-    stateSelect.innerHTML += '<option value="">N/A</option>';
-  }
-}
-
-// On country change, populate states and update display (called from HTML)
-function onCountryChange(side) {
-  populateStateOptions(side);
-  updateRateDisplay(side);
-  calc();
-}
-
-// Update rate display
-function updateRateDisplay(side) {
-  const countryCode = document.getElementById(side + '-country').value;
-  const stateCode = document.getElementById(side + '-state').value;
-  const juris = JurisdictionRegistry.resolve(countryCode, stateCode);
-  const display = document.getElementById(side + '-rate-display');
-  if (juris) {
-    const rate = juris.isUS ? juris.stateRate : juris.countryIncomeRate;
-    display.textContent = rate > 0 ? formatPercentage(rate) : '0%';
-  } else {
-    display.textContent = '—';
-  }
-}
-
-// Sync days slider
-function syncDays(side, el) {
-  const slider = document.getElementById(side + '-days');
-  const numInput = document.getElementById(side + '-days-num');
-  const value = el.value;
-  slider.value = value;
-  numInput.value = value;
-  const sideAbbrev = side === 'grant' ? 'g' : 'v';
-  const svEl = document.getElementById('sv-' + sideAbbrev + 'days');
-  if (svEl) svEl.textContent = parseInt(value).toLocaleString();
-}
-
 // Render scenario chips
 function renderScenarioChips() {
   const container = document.getElementById('scenario-chips');
@@ -2713,18 +2634,11 @@ function renderScenarioChips() {
 
 // Apply scenario
 function applyScenario(s) {
-  document.getElementById('grant-country').value = s.grant;
-  document.getElementById('vest-country').value = s.vest;
-  populateStateOptions('grant');
-  populateStateOptions('vest');
-  if (s.grantState) {
-    document.getElementById('grant-state').value = s.grantState;
-  }
-  if (s.vestState) {
-    document.getElementById('vest-state').value = s.vestState;
-  }
-  updateRateDisplay('grant');
-  updateRateDisplay('vest');
+  mobilityRows = [
+    { country: s.grant, state: s.grantState || '', days: 500 },
+    { country: s.vest, state: s.vestState || '', days: 500 }
+  ];
+  renderMobilityTable();
   calc();
 }
 
