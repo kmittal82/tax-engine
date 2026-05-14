@@ -790,6 +790,40 @@ body.mode-projection .concept-banner { display: none !important; }
 .equity-timeline-section .mobility-table input[type=date] {
   width: 130px;
 }
+.vesting-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.vesting-table th {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.vesting-table th.right {
+  text-align: right;
+}
+.vesting-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.vesting-table td.right {
+  text-align: right;
+}
+.vesting-table tr:last-child td {
+  border-bottom: none;
+}
+.vesting-table tr.vesting-total td {
+  background: var(--bg-soft);
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+}
 </style>
 </head>
 <body>
@@ -857,6 +891,31 @@ body.mode-projection .concept-banner { display: none !important; }
         <label>Years</label>
         <input type="number" id="vest-years-custom" min="1" max="10" value="4" oninput="onVestScheduleChange()">
       </div>
+      <div class="timeline-field">
+        <label>Units</label>
+        <input type="number" id="grant-units" min="0.01" step="0.01" value="0" oninput="onVestingInputChange()">
+      </div>
+      <div class="timeline-field">
+        <label>FMV (per unit)</label>
+        <input type="number" id="grant-fmv" min="0" step="0.01" value="0" oninput="onVestingInputChange()">
+      </div>
+    </div>
+
+    <!-- Vesting Schedule Breakdown -->
+    <div id="vesting-schedule-container" style="display:none;margin-bottom:16px">
+      <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:8px">Vesting Schedule Breakdown</div>
+      <table class="vesting-table">
+        <thead>
+          <tr>
+            <th>Vesting Date</th>
+            <th class="right">Units</th>
+            <th class="right">Value @ FMV</th>
+            <th class="right">Cumulative Units</th>
+            <th class="right">Cumulative Value</th>
+          </tr>
+        </thead>
+        <tbody id="vesting-tbody"></tbody>
+      </table>
     </div>
 
     <!-- Mobility table (moved from side panel) -->
@@ -1893,6 +1952,8 @@ let mobilityRows = [
 
 let grantDate = '';
 let vestSchedule = '4y1c';
+let grantUnits = 0;
+let grantFMV = 0;
 
 const VEST_SCHEDULES = {
   '4y1c':  { years: 4, cliffMonths: 12 },
@@ -1981,6 +2042,131 @@ function onMobilityDateChange(i, field, value) {
   }
   renderMobilityTable();
   calc();
+}
+
+function onVestingInputChange() {
+  grantUnits = parseFloat(document.getElementById('grant-units').value) || 0;
+  grantFMV = parseFloat(document.getElementById('grant-fmv').value) || 0;
+  renderVestingScheduleBreakdown();
+  calc();
+}
+
+function computeVestingSchedule() {
+  const gd = document.getElementById('grant-date').value;
+  const sched = document.getElementById('vest-schedule').value;
+
+  if (!gd || !grantUnits || grantUnits === 0) return [];
+
+  const cfg = VEST_SCHEDULES[sched];
+  let years = cfg ? cfg.years : (parseInt(document.getElementById('vest-years-custom').value) || 4);
+  let cliffMonths = cfg ? cfg.cliffMonths : 0;
+
+  const schedule = [];
+
+  // Add cliff date (if any)
+  if (cliffMonths > 0) {
+    const cliffDate = addMonths(gd, cliffMonths);
+    const unitsAtCliff = (grantUnits * cliffMonths) / (years * 12);
+    schedule.push({ date: cliffDate, units: unitsAtCliff });
+  }
+
+  // Add anniversary dates
+  const monthsPerYear = 12;
+  for (let yr = 1; yr <= years; yr++) {
+    const anniversaryDate = addYears(gd, yr);
+    let unitsAtAnniversary;
+
+    if (cliffMonths > 0 && yr === Math.ceil(cliffMonths / 12)) {
+      // Skip if this is the cliff anniversary
+      continue;
+    } else if (cliffMonths > 0) {
+      // After cliff: remaining units spread evenly
+      const remainingMonths = (years * 12) - cliffMonths;
+      unitsAtAnniversary = (grantUnits - (grantUnits * cliffMonths) / (years * 12)) / (years - Math.ceil(cliffMonths / 12));
+    } else {
+      // No cliff: units spread evenly
+      unitsAtAnniversary = grantUnits / years;
+    }
+
+    schedule.push({ date: anniversaryDate, units: unitsAtAnniversary });
+  }
+
+  return schedule;
+}
+
+function renderVestingScheduleBreakdown() {
+  const schedule = computeVestingSchedule();
+  const container = document.getElementById('vesting-schedule-container');
+  const tbody = document.getElementById('vesting-tbody');
+
+  if (!schedule || schedule.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+  tbody.innerHTML = '';
+
+  let cumulativeUnits = 0;
+  let cumulativeValue = 0;
+
+  schedule.forEach(item => {
+    const tr = document.createElement('tr');
+    cumulativeUnits += item.units;
+    cumulativeValue += item.units * grantFMV;
+
+    const dateCell = document.createElement('td');
+    dateCell.textContent = item.date;
+
+    const unitsCell = document.createElement('td');
+    unitsCell.className = 'right';
+    unitsCell.textContent = item.units.toFixed(2);
+
+    const valueCell = document.createElement('td');
+    valueCell.className = 'right';
+    valueCell.textContent = (item.units * grantFMV).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+    const cumUnitsCell = document.createElement('td');
+    cumUnitsCell.className = 'right';
+    cumUnitsCell.textContent = cumulativeUnits.toFixed(2);
+
+    const cumValueCell = document.createElement('td');
+    cumValueCell.className = 'right';
+    cumValueCell.textContent = cumulativeValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+    tr.appendChild(dateCell);
+    tr.appendChild(unitsCell);
+    tr.appendChild(valueCell);
+    tr.appendChild(cumUnitsCell);
+    tr.appendChild(cumValueCell);
+    tbody.appendChild(tr);
+  });
+
+  // Add total row
+  const totalRow = document.createElement('tr');
+  totalRow.className = 'vesting-total';
+
+  const totalLabelCell = document.createElement('td');
+  totalLabelCell.textContent = 'TOTAL';
+  totalRow.appendChild(totalLabelCell);
+
+  const totalUnitsCell = document.createElement('td');
+  totalUnitsCell.className = 'right';
+  totalUnitsCell.textContent = cumulativeUnits.toFixed(2);
+  totalRow.appendChild(totalUnitsCell);
+
+  const totalValueCell = document.createElement('td');
+  totalValueCell.className = 'right';
+  totalValueCell.textContent = cumulativeValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  totalRow.appendChild(totalValueCell);
+
+  const blankCell1 = document.createElement('td');
+  totalRow.appendChild(blankCell1);
+
+  const blankCell2 = document.createElement('td');
+  totalRow.appendChild(blankCell2);
+
+  tbody.appendChild(totalRow);
 }
 
 // =====================================================
@@ -2472,13 +2658,21 @@ function applyState(state) {
   if (!state) return;
   isApplyingState = true;
 
-  // Hydrate grant date and vest schedule
+  // Hydrate grant date, vest schedule, units, and FMV
   if (state.grantDate) {
     document.getElementById('grant-date').value = state.grantDate;
     grantDate = state.grantDate;
   }
   if (state.vestSchedule) {
     document.getElementById('vest-schedule').value = state.vestSchedule;
+  }
+  if (state.grantUnits != null) {
+    document.getElementById('grant-units').value = state.grantUnits;
+    grantUnits = state.grantUnits;
+  }
+  if (state.grantFMV != null) {
+    document.getElementById('grant-fmv').value = state.grantFMV;
+    grantFMV = state.grantFMV;
   }
 
   // Hydrate mobility data
@@ -2492,6 +2686,7 @@ function applyState(state) {
     ];
   }
   updateVestEndDisplay();
+  renderVestingScheduleBreakdown();
   renderMobilityTable();
 
   if (state.awardType && AwardRegistry[state.awardType]) {
@@ -2623,6 +2818,7 @@ function init() {
   }
 
   updateVestEndDisplay();
+  renderVestingScheduleBreakdown();
   renderAwardTabs();
   renderMobilityTable();
   renderScenarioChips();
@@ -2910,6 +3106,8 @@ function getInputs() {
     awardType: getCurrentAward().id,
     grantDate: document.getElementById('grant-date').value || '',
     vestSchedule: document.getElementById('vest-schedule').value || '4y1c',
+    grantUnits: parseFloat(document.getElementById('grant-units').value) || 0,
+    grantFMV: parseFloat(document.getElementById('grant-fmv').value) || 0,
     grantCountry: mobilityRows[0]?.country || 'US',
     grantState: mobilityRows[0]?.state || '',
     vestCountry: mobilityRows[mobilityRows.length - 1]?.country || 'US',
