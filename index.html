@@ -824,6 +824,69 @@ body.mode-projection .concept-banner { display: none !important; }
   font-weight: 600;
   border-top: 1px solid var(--border);
 }
+/* Tax Rates Section */
+.tax-rates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.tax-rate-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.tax-rate-card-header {
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 12px;
+}
+.tax-rate-card-body { padding: 8px 12px; }
+.tax-rate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 8px;
+}
+.tax-rate-row:last-child { border-bottom: none; }
+.tax-rate-name { color: var(--text-muted); flex: 1; }
+.tax-rate-val { font-weight: 600; font-family: 'DM Mono', monospace; white-space: nowrap; }
+.tax-bracket-list { margin: 0; }
+.tax-bracket-row {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+}
+.tax-bracket-row:last-child { border-bottom: none; }
+.tax-bracket-rate {
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  min-width: 38px;
+  color: var(--text);
+}
+.tax-bracket-range { color: var(--text-muted); }
+.tax-juris-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+.tax-juris-federal { background: #eef2ff; color: #4f46e5; }
+.tax-juris-state   { background: #f0fdf4; color: #16a34a; }
+.tax-juris-foreign { background: #fff7ed; color: #c2410c; }
+.tax-zero { color: var(--text-subtle); font-style: italic; }
 </style>
 </head>
 <body>
@@ -933,7 +996,7 @@ body.mode-projection .concept-banner { display: none !important; }
         <tr>
           <th>From Date</th><th>To Date</th>
           <th>Country</th><th>State/Province</th>
-          <th>Days</th><th>Alloc %</th><th>Role</th><th></th>
+          <th>Days</th><th>Alloc %</th><th></th>
         </tr>
       </thead>
       <tbody id="mobility-tbody"></tbody>
@@ -943,6 +1006,12 @@ body.mode-projection .concept-banner { display: none !important; }
     <div style="margin-top:12px">
       <div id="alloc-bar-multi-container" class="alloc-bar-multi"></div>
       <div id="alloc-meta-container" style="font-size:11px;color:#64748b;margin-top:4px"></div>
+    </div>
+
+    <!-- Applicable Tax Rates -->
+    <div style="margin-top:20px">
+      <div class="timeline-section-title" style="margin-bottom:12px">Applicable Tax Rates</div>
+      <div id="tax-rates-section"><div class="tax-zero" style="font-size:12px">Add locations above to see applicable tax rates.</div></div>
     </div>
   </div>
 
@@ -1967,6 +2036,130 @@ const VEST_SCHEDULES = {
   'custom': null
 };
 
+// State income tax brackets (2025, single filer)
+const STATE_BRACKETS = {
+  CA: [
+    { rate: 0.01,   upTo: 10756  },
+    { rate: 0.02,   upTo: 25499  },
+    { rate: 0.04,   upTo: 40245  },
+    { rate: 0.06,   upTo: 55866  },
+    { rate: 0.08,   upTo: 70606  },
+    { rate: 0.093,  upTo: 360659 },
+    { rate: 0.103,  upTo: 432787 },
+    { rate: 0.113,  upTo: 721314 },
+    { rate: 0.123,  upTo: 1000000},
+    { rate: 0.133,  upTo: Infinity}
+  ],
+  NY: [
+    { rate: 0.04,   upTo: 17150  },
+    { rate: 0.045,  upTo: 23600  },
+    { rate: 0.0525, upTo: 27900  },
+    { rate: 0.0585, upTo: 161550 },
+    { rate: 0.0625, upTo: 323200 },
+    { rate: 0.0685, upTo: 2155350},
+    { rate: 0.0965, upTo: 5000000},
+    { rate: 0.103,  upTo: 25000000},
+    { rate: 0.109,  upTo: Infinity}
+  ],
+  NJ: [
+    { rate: 0.014,  upTo: 20000  },
+    { rate: 0.0175, upTo: 35000  },
+    { rate: 0.035,  upTo: 40000  },
+    { rate: 0.05525,upTo: 75000  },
+    { rate: 0.0637, upTo: 500000 },
+    { rate: 0.0897, upTo: 1000000},
+    { rate: 0.1075, upTo: Infinity}
+  ],
+  OR: [
+    { rate: 0.0475, upTo: 18400  },
+    { rate: 0.0675, upTo: 46200  },
+    { rate: 0.0875, upTo: 250000 },
+    { rate: 0.099,  upTo: Infinity}
+  ],
+  MN: [
+    { rate: 0.0535, upTo: 30070  },
+    { rate: 0.068,  upTo: 98760  },
+    { rate: 0.0785, upTo: 183340 },
+    { rate: 0.0985, upTo: Infinity}
+  ],
+  MD: [
+    { rate: 0.02,   upTo: 1000   },
+    { rate: 0.03,   upTo: 2000   },
+    { rate: 0.04,   upTo: 3000   },
+    { rate: 0.0475, upTo: 100000 },
+    { rate: 0.05,   upTo: 125000 },
+    { rate: 0.0525, upTo: 150000 },
+    { rate: 0.055,  upTo: 250000 },
+    { rate: 0.0575, upTo: Infinity}
+  ],
+  CT: [
+    { rate: 0.02,   upTo: 10000  },
+    { rate: 0.045,  upTo: 50000  },
+    { rate: 0.055,  upTo: 100000 },
+    { rate: 0.06,   upTo: 200000 },
+    { rate: 0.065,  upTo: 250000 },
+    { rate: 0.069,  upTo: 500000 },
+    { rate: 0.0699, upTo: Infinity}
+  ],
+  VT: [
+    { rate: 0.0335, upTo: 45400  },
+    { rate: 0.066,  upTo: 110050 },
+    { rate: 0.076,  upTo: 229550 },
+    { rate: 0.0875, upTo: Infinity}
+  ],
+  WI: [
+    { rate: 0.035,  upTo: 14320  },
+    { rate: 0.044,  upTo: 28640  },
+    { rate: 0.053,  upTo: 315310 },
+    { rate: 0.0765, upTo: Infinity}
+  ],
+  VA: [
+    { rate: 0.02,   upTo: 3000   },
+    { rate: 0.03,   upTo: 5000   },
+    { rate: 0.05,   upTo: 17000  },
+    { rate: 0.0575, upTo: Infinity}
+  ],
+  OH: [
+    { rate: 0.00,   upTo: 26050  },
+    { rate: 0.0275, upTo: 100000 },
+    { rate: 0.0399, upTo: Infinity}
+  ],
+  HI: [
+    { rate: 0.014,  upTo: 2400   },
+    { rate: 0.032,  upTo: 4800   },
+    { rate: 0.055,  upTo: 9600   },
+    { rate: 0.064,  upTo: 14400  },
+    { rate: 0.068,  upTo: 19200  },
+    { rate: 0.072,  upTo: 24000  },
+    { rate: 0.076,  upTo: 36000  },
+    { rate: 0.079,  upTo: 48000  },
+    { rate: 0.0825, upTo: 150000 },
+    { rate: 0.09,   upTo: 175000 },
+    { rate: 0.10,   upTo: 200000 },
+    { rate: 0.11,   upTo: Infinity}
+  ],
+  SC: [
+    { rate: 0.00,   upTo: 3460   },
+    { rate: 0.03,   upTo: 17330  },
+    { rate: 0.064,  upTo: Infinity}
+  ],
+  LA: [
+    { rate: 0.0185, upTo: 12500  },
+    { rate: 0.035,  upTo: 50000  },
+    { rate: 0.0425, upTo: Infinity}
+  ],
+  AR: [
+    { rate: 0.02,   upTo: 4400   },
+    { rate: 0.04,   upTo: 8800   },
+    { rate: 0.044,  upTo: Infinity}
+  ],
+  ND: [
+    { rate: 0.0195, upTo: 44725  },
+    { rate: 0.0295, upTo: 232900 },
+    { rate: 0.025,  upTo: Infinity}
+  ]
+};
+
 // =====================================================
 // DATE HELPER FUNCTIONS
 // =====================================================
@@ -2170,6 +2363,191 @@ function renderVestingScheduleBreakdown() {
 }
 
 // =====================================================
+// TAX RATES SECTION
+// =====================================================
+
+function fmtPct(r) { return (r * 100).toFixed(r * 100 % 1 === 0 ? 0 : 2) + '%'; }
+function fmtDollar(n) { return n === Infinity ? '+' : '$' + n.toLocaleString(); }
+
+function buildBracketRows(brackets) {
+  return brackets.map((b, i) => {
+    const from = i === 0 ? '$0' : fmtDollar(brackets[i - 1].upTo);
+    const to   = b.upTo === Infinity ? '+' : fmtDollar(b.upTo);
+    const range = b.upTo === Infinity ? `${from}+` : `${from} – ${to}`;
+    return `<div class="tax-bracket-row">
+      <span class="tax-bracket-rate">${fmtPct(b.rate)}</span>
+      <span class="tax-bracket-range">${range}</span>
+    </div>`;
+  }).join('');
+}
+
+function buildFederalCard() {
+  const brackets = typeof FED_BRACKETS_2025 !== 'undefined' ? FED_BRACKETS_2025 : [];
+  return `
+    <div class="tax-rate-card">
+      <div class="tax-rate-card-header">
+        <span>Federal Income Tax</span>
+        <span class="tax-juris-pill tax-juris-federal">Federal</span>
+      </div>
+      <div class="tax-rate-card-body">
+        ${brackets.length ? `<div class="tax-bracket-list">${buildBracketRows(brackets)}</div>` : '<span class="tax-zero">No bracket data</span>'}
+      </div>
+    </div>`;
+}
+
+function buildFICACard() {
+  return `
+    <div class="tax-rate-card">
+      <div class="tax-rate-card-header">
+        <span>FICA / Payroll Taxes</span>
+        <span class="tax-juris-pill tax-juris-federal">Federal</span>
+      </div>
+      <div class="tax-rate-card-body">
+        <div class="tax-rate-row">
+          <span class="tax-rate-name">Social Security</span>
+          <span class="tax-rate-val">6.2% <span style="font-weight:400;color:var(--text-muted)">≤ $176,100</span></span>
+        </div>
+        <div class="tax-rate-row">
+          <span class="tax-rate-name">Medicare</span>
+          <span class="tax-rate-val">1.45%</span>
+        </div>
+        <div class="tax-rate-row">
+          <span class="tax-rate-name">Additional Medicare</span>
+          <span class="tax-rate-val">0.9% <span style="font-weight:400;color:var(--text-muted)">> $200K</span></span>
+        </div>
+        <div class="tax-rate-row">
+          <span class="tax-rate-name">NIIT (Net Investment)</span>
+          <span class="tax-rate-val">3.8% <span style="font-weight:400;color:var(--text-muted)">> $200K</span></span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildLTCGCard() {
+  return `
+    <div class="tax-rate-card">
+      <div class="tax-rate-card-header">
+        <span>Long-Term Capital Gains</span>
+        <span class="tax-juris-pill tax-juris-federal">Federal</span>
+      </div>
+      <div class="tax-rate-card-body">
+        <div class="tax-bracket-list">
+          <div class="tax-bracket-row">
+            <span class="tax-bracket-rate">0%</span>
+            <span class="tax-bracket-range">$0 – $47,025</span>
+          </div>
+          <div class="tax-bracket-row">
+            <span class="tax-bracket-rate">15%</span>
+            <span class="tax-bracket-range">$47,025 – $518,900</span>
+          </div>
+          <div class="tax-bracket-row">
+            <span class="tax-bracket-rate">20%</span>
+            <span class="tax-bracket-range">$518,900+</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildStateCard(stateCode) {
+  const stateInfo = JurisdictionRegistry.usStates[stateCode];
+  if (!stateInfo) return '';
+
+  const name  = stateInfo.name || stateCode;
+  const rate  = stateInfo.rate || 0;
+  const brackets = STATE_BRACKETS[stateCode];
+
+  let body;
+  if (rate === 0) {
+    body = `<div class="tax-rate-row"><span class="tax-zero">No state income tax</span></div>`;
+  } else if (brackets) {
+    body = `<div class="tax-bracket-list">${buildBracketRows(brackets)}</div>`;
+  } else {
+    // Flat or unknown — show top marginal
+    body = `<div class="tax-rate-row">
+      <span class="tax-rate-name">Income Tax (flat / top marginal)</span>
+      <span class="tax-rate-val">${fmtPct(rate)}</span>
+    </div>`;
+  }
+
+  // WA special: no income tax but has 7% LTCG tax
+  const extra = stateCode === 'WA' ? `<div class="tax-rate-row"><span class="tax-rate-name">Long-Term Capital Gains</span><span class="tax-rate-val">7.0%</span></div>` : '';
+
+  return `
+    <div class="tax-rate-card">
+      <div class="tax-rate-card-header">
+        <span>${name} (${stateCode})</span>
+        <span class="tax-juris-pill tax-juris-state">State</span>
+      </div>
+      <div class="tax-rate-card-body">${body}${extra}</div>
+    </div>`;
+}
+
+function buildCountryCard(countryCode) {
+  const c = JurisdictionRegistry.countries[countryCode];
+  if (!c) return '';
+
+  let body = '';
+  if (!c.hasIncomeTax) {
+    body += `<div class="tax-rate-row"><span class="tax-zero">No income tax</span></div>`;
+  } else {
+    body += `<div class="tax-rate-row">
+      <span class="tax-rate-name">Income Tax (top marginal)</span>
+      <span class="tax-rate-val">${fmtPct(c.incomeRate)}</span>
+    </div>`;
+  }
+  if (c.socialRate > 0) {
+    body += `<div class="tax-rate-row">
+      <span class="tax-rate-name">Social / Pension</span>
+      <span class="tax-rate-val">${fmtPct(c.socialRate)}</span>
+    </div>`;
+  }
+  if (c.notes) {
+    body += `<div style="font-size:11px;color:var(--text-subtle);margin-top:6px;line-height:1.4">${c.notes}</div>`;
+  }
+  if (c.treatyWithUS) {
+    body += `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">US Tax Treaty: Yes</div>`;
+  }
+
+  return `
+    <div class="tax-rate-card">
+      <div class="tax-rate-card-header">
+        <span>${c.name} (${countryCode})</span>
+        <span class="tax-juris-pill tax-juris-foreign">Foreign</span>
+      </div>
+      <div class="tax-rate-card-body">${body}</div>
+    </div>`;
+}
+
+function renderTaxRatesSection() {
+  const container = document.getElementById('tax-rates-section');
+  if (!container) return;
+
+  const hasUSRows = mobilityRows.some(r => r.country === 'US');
+  const uniqueStates   = [...new Set(mobilityRows.filter(r => r.country === 'US' && r.state).map(r => r.state))];
+  const uniqueCountries = [...new Set(mobilityRows.filter(r => r.country !== 'US' && r.country).map(r => r.country))];
+
+  if (!hasUSRows && uniqueCountries.length === 0) {
+    container.innerHTML = '<div class="tax-zero" style="font-size:12px">Add locations above to see applicable tax rates.</div>';
+    return;
+  }
+
+  let html = '<div class="tax-rates-grid">';
+
+  if (hasUSRows) {
+    html += buildFederalCard();
+    html += buildFICACard();
+    html += buildLTCGCard();
+    uniqueStates.forEach(s => { html += buildStateCard(s); });
+  }
+
+  uniqueCountries.forEach(c => { html += buildCountryCard(c); });
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// =====================================================
 // MOBILITY TABLE FUNCTIONS
 // =====================================================
 
@@ -2189,7 +2567,6 @@ function renderMobilityTable() {
   mobilityRows.forEach((row, i) => {
     const tr = document.createElement('tr');
     const isLast = i === mobilityRows.length - 1;
-    const role = isLast ? 'RESIDENT' : 'SOURCE';
     const allocPct = ((row.days || 0) / totalVestingDays * 100).toFixed(1);
 
     // From Date input
@@ -2229,12 +2606,6 @@ function renderMobilityTable() {
     allocCell.className = 'mobility-alloc-pct';
     allocCell.textContent = allocPct + '%';
 
-    const roleBadge = document.createElement('td');
-    const badge = document.createElement('span');
-    badge.className = `mobility-badge ${role.toLowerCase()}`;
-    badge.textContent = role;
-    roleBadge.appendChild(badge);
-
     const removeBtn = document.createElement('button');
     removeBtn.className = 'mobility-row-remove';
     removeBtn.innerHTML = '✕';
@@ -2247,7 +2618,6 @@ function renderMobilityTable() {
     tr.appendChild(document.createElement('td')).appendChild(stateSelect);
     tr.appendChild(document.createElement('td')).appendChild(daysInput);
     tr.appendChild(allocCell);
-    tr.appendChild(roleBadge);
     tr.appendChild(document.createElement('td')).appendChild(removeBtn);
 
     tbody.appendChild(tr);
@@ -2270,6 +2640,7 @@ function renderMobilityTable() {
   document.getElementById('vest-state').value = mobilityRows[lastIdx]?.state || '';
   document.getElementById('vest-days').value = mobilityRows[lastIdx]?.days || 0;
   document.getElementById('vest-days-num').value = mobilityRows[lastIdx]?.days || 0;
+  renderTaxRatesSection();
 }
 
 function populateMobilityStateOptions(rowIdx, selectEl, country) {
@@ -2834,6 +3205,7 @@ function init() {
   renderVestingScheduleBreakdown();
   renderAwardTabs();
   renderMobilityTable();
+  renderTaxRatesSection();
   renderScenarioChips();
   selectAward('NQ');
   calc();
