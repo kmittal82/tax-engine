@@ -728,6 +728,68 @@ body.mode-projection .concept-banner { display: none !important; }
 .mobility-impact-delta.positive { color: #22c55e; }
 .mobility-impact-delta.negative { color: #ef4444; }
 .mobility-impact-delta.neutral { color: #64748b; }
+
+/* Equity Timeline & Mobility section */
+.equity-timeline-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+.timeline-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 16px;
+}
+.timeline-inputs-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.timeline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.timeline-field label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.timeline-field input[type=date],
+.timeline-field select,
+.timeline-field input[type=number] {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: 'DM Mono', monospace;
+}
+.vest-end-badge {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: 'DM Mono', monospace;
+  white-space: nowrap;
+}
+.equity-timeline-section .mobility-table th:nth-child(1),
+.equity-timeline-section .mobility-table th:nth-child(2) {
+  min-width: 120px;
+}
+.equity-timeline-section .mobility-table input[type=date] {
+  width: 130px;
+}
 </style>
 </head>
 <body>
@@ -772,6 +834,63 @@ body.mode-projection .concept-banner { display: none !important; }
     <div class="concept-item"><strong>Notes</strong><span id="cb-notes">—</span></div>
   </div>
 
+  <div class="equity-timeline-section" id="equity-timeline-section">
+    <div class="timeline-section-title">Equity Timeline & Mobility</div>
+
+    <div class="timeline-inputs-row">
+      <div class="timeline-field">
+        <label>Grant Date</label>
+        <input type="date" id="grant-date" oninput="onGrantDateChange()">
+      </div>
+      <div class="timeline-field">
+        <label>Vesting Schedule</label>
+        <select id="vest-schedule" onchange="onVestScheduleChange()">
+          <option value="4y1c">4-yr / 1-yr cliff</option>
+          <option value="3y1c">3-yr / 1-yr cliff</option>
+          <option value="2y6c">2-yr / 6-mo cliff</option>
+          <option value="4y">4-yr straight</option>
+          <option value="cliff">Cliff only</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="timeline-field" id="custom-years-field" style="display:none">
+        <label>Years</label>
+        <input type="number" id="vest-years-custom" min="1" max="10" value="4" oninput="onVestScheduleChange()">
+      </div>
+      <div class="timeline-field">
+        <label>Vest End Date</label>
+        <span class="vest-end-badge" id="vest-end-display">—</span>
+      </div>
+    </div>
+
+    <!-- Mobility table (moved from side panel) -->
+    <div class="mobility-header" style="margin-bottom:8px">
+      <span style="font-weight:600;font-size:13px;color:var(--text)">Mobility — Locations & Days</span>
+      <div>
+        <span id="mobility-total-days-badge" style="font-size:12px;color:#64748b;font-weight:400;margin-right:8px"></span>
+        <button class="mobility-import-btn" onclick="document.getElementById('mobility-file-input').click()">⬆ Import</button>
+        <button class="mobility-import-btn" onclick="exportMobilityCSV()">⬇ Export</button>
+        <input type="file" id="mobility-file-input" accept=".csv,.json" style="display:none" onchange="importMobilityFile(this)">
+      </div>
+    </div>
+    <table class="mobility-table">
+      <thead>
+        <tr>
+          <th>From Date</th><th>To Date</th>
+          <th>Country</th><th>State/Province</th>
+          <th>Days</th><th>Alloc %</th><th>Role</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="mobility-tbody"></tbody>
+    </table>
+    <button class="mobility-add-row" onclick="addMobilityRow()">+ Add Location</button>
+
+    <div style="margin-top:12px">
+      <div id="alloc-bar-multi-container" class="alloc-bar-multi"></div>
+      <div id="alloc-meta-container" style="font-size:11px;color:#64748b;margin-top:4px"></div>
+    </div>
+  </div>
+
   <div class="main-grid">
     <div>
       <div class="panel">
@@ -788,33 +907,6 @@ body.mode-projection .concept-banner { display: none !important; }
           <hr class="divider advanced-only">
           <div class="sec-label advanced-only">Quick Cross-Border Scenarios</div>
           <div class="chip-row advanced-only" id="scenario-chips"></div>
-
-          <div class="sec-label">
-            <span>Grant & Settlement Locations</span>
-            <span class="info-tag" id="loc-info">Workday Sourcing</span>
-          </div>
-
-          <div class="mobility-section" id="mobility-section">
-            <div class="mobility-header">
-              <span>Mobility — Locations & Days Worked</span>
-              <div>
-                <span id="mobility-total-days-badge" style="font-size:12px;color:#64748b;font-weight:400"></span>
-                <button class="mobility-import-btn" onclick="document.getElementById('mobility-file-input').click()">⬆ Import</button>
-                <button class="mobility-import-btn" onclick="exportMobilityCSV()">⬇ Export</button>
-                <input type="file" id="mobility-file-input" accept=".csv,.json" style="display:none" onchange="importMobilityFile(this)">
-              </div>
-            </div>
-            <table class="mobility-table">
-              <thead><tr><th>Country</th><th>State/Province</th><th>Days</th><th>Alloc %</th><th>Role</th><th></th></tr></thead>
-              <tbody id="mobility-tbody"></tbody>
-            </table>
-            <button class="mobility-add-row" onclick="addMobilityRow()">+ Add Location</button>
-            <div class="alloc-row advanced-only" style="margin-top:12px">
-              <div class="alloc-title">Income Allocation</div>
-              <div id="alloc-bar-multi-container" class="alloc-bar-multi"></div>
-              <div id="alloc-meta-container" style="font-size:11px;color:#64748b"></div>
-            </div>
-          </div>
 
           <!-- Hidden legacy inputs — kept for getInputs() backward compat -->
           <input type="hidden" id="grant-country"><input type="hidden" id="grant-state">
@@ -1799,9 +1891,101 @@ const AwardRegistry = {
 const MOBILITY_COLORS = ['#f59e0b','#a855f7','#0ea5e9','#22c55e','#f97316','#6366f1'];
 
 let mobilityRows = [
-  { country: 'US', state: 'CA', days: 500 },
-  { country: 'US', state: 'CA', days: 500 }
+  { country: 'US', state: 'CA', fromDate: '', toDate: '', days: 500 },
+  { country: 'US', state: 'CA', fromDate: '', toDate: '', days: 500 }
 ];
+
+let grantDate = '';
+let vestSchedule = '4y1c';
+
+const VEST_SCHEDULES = {
+  '4y1c':  { years: 4, cliffMonths: 12 },
+  '3y1c':  { years: 3, cliffMonths: 12 },
+  '2y6c':  { years: 2, cliffMonths: 6  },
+  '4y':    { years: 4, cliffMonths: 0  },
+  'cliff': { years: 1, cliffMonths: 0  },
+  'custom': null
+};
+
+// =====================================================
+// DATE HELPER FUNCTIONS
+// =====================================================
+
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split('T')[0];
+}
+
+function addYears(dateStr, years) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().split('T')[0];
+}
+
+function daysBetween(fromISO, toISO) {
+  if (!fromISO || !toISO) return 0;
+  const from = new Date(fromISO + 'T00:00:00');
+  const to = new Date(toISO + 'T00:00:00');
+  const diffTime = Math.abs(to - from);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+function computeVestEndDate() {
+  const gd = document.getElementById('grant-date').value;
+  const sched = document.getElementById('vest-schedule').value;
+  if (!gd) return '';
+  const cfg = VEST_SCHEDULES[sched];
+  if (!cfg) {
+    const y = parseInt(document.getElementById('vest-years-custom').value) || 4;
+    return addYears(gd, y);
+  }
+  return addYears(gd, cfg.years);
+}
+
+function updateVestEndDisplay() {
+  const vestEnd = computeVestEndDate();
+  document.getElementById('vest-end-display').textContent = vestEnd || '—';
+}
+
+function onGrantDateChange() {
+  grantDate = document.getElementById('grant-date').value;
+  // Update first row fromDate
+  if (mobilityRows.length > 0 && !mobilityRows[0].fromDate) {
+    mobilityRows[0].fromDate = grantDate;
+  }
+  updateVestEndDisplay();
+  renderMobilityTable();
+  calc();
+}
+
+function onVestScheduleChange() {
+  const sched = document.getElementById('vest-schedule').value;
+  document.getElementById('custom-years-field').style.display = sched === 'custom' ? '' : 'none';
+  // Update last row toDate
+  const vestEnd = computeVestEndDate();
+  if (vestEnd && mobilityRows.length > 0) {
+    mobilityRows[mobilityRows.length - 1].toDate = vestEnd;
+    const lastRow = mobilityRows[mobilityRows.length - 1];
+    if (lastRow.fromDate) {
+      lastRow.days = daysBetween(lastRow.fromDate, vestEnd) || lastRow.days;
+    }
+  }
+  updateVestEndDisplay();
+  renderMobilityTable();
+  calc();
+}
+
+function onMobilityDateChange(i, field, value) {
+  mobilityRows[i][field] = value;
+  // Auto-calculate days from dates if both set
+  const row = mobilityRows[i];
+  if (row.fromDate && row.toDate) {
+    row.days = Math.max(1, daysBetween(row.fromDate, row.toDate));
+  }
+  renderMobilityTable();
+  calc();
+}
 
 // =====================================================
 // MOBILITY TABLE FUNCTIONS
@@ -1817,6 +2001,18 @@ function renderMobilityTable() {
     const isLast = i === mobilityRows.length - 1;
     const role = isLast ? 'RESIDENT' : 'SOURCE';
     const allocPct = ((row.days || 0) / totalDays * 100).toFixed(1);
+
+    // From Date input
+    const fromInput = document.createElement('input');
+    fromInput.type = 'date';
+    fromInput.value = row.fromDate || '';
+    fromInput.onchange = (e) => onMobilityDateChange(i, 'fromDate', e.target.value);
+
+    // To Date input
+    const toInput = document.createElement('input');
+    toInput.type = 'date';
+    toInput.value = row.toDate || '';
+    toInput.onchange = (e) => onMobilityDateChange(i, 'toDate', e.target.value);
 
     const countrySelect = document.createElement('select');
     countrySelect.onchange = (e) => onMobilityCountryChange(i, e.target.value);
@@ -1855,6 +2051,8 @@ function renderMobilityTable() {
     removeBtn.disabled = mobilityRows.length <= 2;
     removeBtn.onclick = () => removeMobilityRow(i);
 
+    tr.appendChild(document.createElement('td')).appendChild(fromInput);
+    tr.appendChild(document.createElement('td')).appendChild(toInput);
     tr.appendChild(document.createElement('td')).appendChild(countrySelect);
     tr.appendChild(document.createElement('td')).appendChild(stateSelect);
     tr.appendChild(document.createElement('td')).appendChild(daysInput);
@@ -1904,7 +2102,18 @@ function populateMobilityStateOptions(rowIdx, selectEl, country) {
 function addMobilityRow() {
   if (mobilityRows.length < 1) return;
   const lastRow = mobilityRows[mobilityRows.length - 1];
-  const newRow = { country: lastRow.country, state: lastRow.state, days: 200 };
+  const prevRow = mobilityRows[mobilityRows.length - 2];
+  const newRow = {
+    country: lastRow.country,
+    state: lastRow.state,
+    fromDate: prevRow?.toDate || lastRow.fromDate || '',
+    toDate: lastRow.toDate || '',
+    days: 200
+  };
+  // Adjust days if both dates are set
+  if (newRow.fromDate && newRow.toDate) {
+    newRow.days = Math.max(1, daysBetween(newRow.fromDate, newRow.toDate));
+  }
   mobilityRows.splice(mobilityRows.length - 1, 0, newRow);
   renderMobilityTable();
   calc();
@@ -2005,7 +2214,7 @@ function parseMobilityCSV(text) {
   // Detect header row
   const firstRow = lines[0].split(',').map(c => c.trim());
   let startIdx = 0;
-  const isHeader = isNaN(parseInt(firstRow[2])) && isNaN(parseInt(firstRow[firstRow.length - 1]));
+  const isHeader = firstRow[0].toLowerCase().includes('country') || firstRow[0].toLowerCase().includes('from');
   if (isHeader) startIdx = 1;
 
   const rows = [];
@@ -2015,16 +2224,22 @@ function parseMobilityCSV(text) {
 
     const country = cols[0];
     const state = cols[1];
-    let days;
+    let fromDate = '';
+    let toDate = '';
+    let days = 0;
 
-    // 4 columns: treat as country, state, from_date, to_date
-    if (cols.length >= 4 && !isNaN(parseInt(cols[2])) === false) {
-      try {
-        const from = new Date(cols[2]);
-        const to = new Date(cols[3]);
-        days = Math.round((to - from) / (1000 * 60 * 60 * 24));
-      } catch {
-        days = 0;
+    // Detect if columns 2-3 are dates (from_date, to_date) or if col 2 is days
+    if (cols.length >= 4) {
+      // Try to parse as dates
+      const from = cols[2];
+      const to = cols[3];
+      if (from && to && /^\d{4}-\d{2}-\d{2}/.test(from) && /^\d{4}-\d{2}-\d{2}/.test(to)) {
+        fromDate = from;
+        toDate = to;
+        days = Math.max(1, daysBetween(from, to));
+      } else {
+        // Treat as country, state, days
+        days = parseInt(cols[2]) || 0;
       }
     } else {
       // 3 columns: treat col3 as days
@@ -2032,7 +2247,7 @@ function parseMobilityCSV(text) {
     }
 
     if (country && state && days > 0) {
-      rows.push({ country, state, days });
+      rows.push({ country, state, fromDate, toDate, days });
     }
   }
 
@@ -2040,9 +2255,9 @@ function parseMobilityCSV(text) {
 }
 
 function exportMobilityCSV() {
-  let csv = 'country,state,days\n';
+  let csv = 'country,state,from_date,to_date,days\n';
   for (const row of mobilityRows) {
-    csv += `${row.country},${row.state},${row.days}\n`;
+    csv += `${row.country},${row.state},${row.fromDate || ''},${row.toDate || ''},${row.days}\n`;
   }
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -2261,16 +2476,26 @@ function applyState(state) {
   if (!state) return;
   isApplyingState = true;
 
+  // Hydrate grant date and vest schedule
+  if (state.grantDate) {
+    document.getElementById('grant-date').value = state.grantDate;
+    grantDate = state.grantDate;
+  }
+  if (state.vestSchedule) {
+    document.getElementById('vest-schedule').value = state.vestSchedule;
+  }
+
   // Hydrate mobility data
   if (state.mobility?.length >= 2) {
     mobilityRows = state.mobility;
   } else if (state.grantCountry) {
     // Backward compat with old URLs
     mobilityRows = [
-      { country: state.grantCountry, state: state.grantState || '', days: state.grantDays || 500 },
-      { country: state.vestCountry || 'US', state: state.vestState || '', days: state.vestDays || 500 }
+      { country: state.grantCountry, state: state.grantState || '', fromDate: '', toDate: '', days: state.grantDays || 500 },
+      { country: state.vestCountry || 'US', state: state.vestState || '', fromDate: '', toDate: '', days: state.vestDays || 500 }
     ];
   }
+  updateVestEndDisplay();
   renderMobilityTable();
 
   if (state.awardType && AwardRegistry[state.awardType]) {
@@ -2379,6 +2604,29 @@ function refreshScenariosDropdown() {
 // Initialize UI
 function init() {
   setMode('simple');  // Start in simple mode
+
+  // Initialize grant date and vesting schedule
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('grant-date').value = today;
+  grantDate = today;
+  document.getElementById('vest-schedule').value = '4y1c';
+
+  // Set default mobility dates
+  const vestEnd = addYears(today, 4);
+  mobilityRows[0].fromDate = today;
+  mobilityRows[0].toDate = '';
+  mobilityRows[1].fromDate = '';
+  mobilityRows[1].toDate = vestEnd;
+
+  // Calculate days from dates if not already set
+  if (mobilityRows[0].fromDate && !mobilityRows[0].toDate) {
+    mobilityRows[0].days = 500;
+  }
+  if (!mobilityRows[1].fromDate && mobilityRows[1].toDate) {
+    mobilityRows[1].days = 500;
+  }
+
+  updateVestEndDisplay();
   renderAwardTabs();
   renderMobilityTable();
   renderScenarioChips();
@@ -2664,13 +2912,15 @@ function calcBracketBreakdown(ytdIncome, exerciseIncome) {
 function getInputs() {
   const inputs = {
     awardType: getCurrentAward().id,
+    grantDate: document.getElementById('grant-date').value || '',
+    vestSchedule: document.getElementById('vest-schedule').value || '4y1c',
     grantCountry: mobilityRows[0]?.country || 'US',
     grantState: mobilityRows[0]?.state || '',
     vestCountry: mobilityRows[mobilityRows.length - 1]?.country || 'US',
     vestState: mobilityRows[mobilityRows.length - 1]?.state || '',
     grantDays: mobilityRows[0]?.days || 0,
     vestDays: mobilityRows[mobilityRows.length - 1]?.days || 0,
-    mobility: mobilityRows.map(r => ({ country: r.country, state: r.state, days: r.days })),
+    mobility: mobilityRows.map(r => ({ country: r.country, state: r.state, fromDate: r.fromDate || '', toDate: r.toDate || '', days: r.days })),
     fedRate: parseFloat(document.getElementById('fed-rate')?.value) || 0.24,
     ltcgRate: parseFloat(document.getElementById('ltcg-rate').value),
     niitRate: document.getElementById('niit-toggle').value === '0' ? 0 : 0.038,
