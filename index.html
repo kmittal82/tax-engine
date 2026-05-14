@@ -1444,16 +1444,81 @@ body.mode-projection .concept-banner { display: none !important; }
 <script>
 'use strict';
 
-// 2025 Federal tax brackets (single filer)
-const FED_BRACKETS_2025 = [
-  { rate: 0.10,  upTo: 11925 },
-  { rate: 0.12,  upTo: 48475 },
-  { rate: 0.22,  upTo: 103350 },
-  { rate: 0.24,  upTo: 197300 },
-  { rate: 0.32,  upTo: 250525 },
-  { rate: 0.35,  upTo: 626350 },
-  { rate: 0.37,  upTo: Infinity }
-];
+// 2025 Federal tax brackets — all four filing statuses
+const FED_BRACKETS_2025 = {
+  single: [
+    { rate: 0.10, upTo: 11925 },
+    { rate: 0.12, upTo: 48475 },
+    { rate: 0.22, upTo: 103350 },
+    { rate: 0.24, upTo: 197300 },
+    { rate: 0.32, upTo: 250525 },
+    { rate: 0.35, upTo: 626350 },
+    { rate: 0.37, upTo: Infinity }
+  ],
+  mfj: [
+    { rate: 0.10, upTo: 23850 },
+    { rate: 0.12, upTo: 96950 },
+    { rate: 0.22, upTo: 206700 },
+    { rate: 0.24, upTo: 394600 },
+    { rate: 0.32, upTo: 501050 },
+    { rate: 0.35, upTo: 751600 },
+    { rate: 0.37, upTo: Infinity }
+  ],
+  mfs: [
+    { rate: 0.10, upTo: 11925 },
+    { rate: 0.12, upTo: 48475 },
+    { rate: 0.22, upTo: 103350 },
+    { rate: 0.24, upTo: 197300 },
+    { rate: 0.32, upTo: 250525 },
+    { rate: 0.35, upTo: 375800 },
+    { rate: 0.37, upTo: Infinity }
+  ],
+  hoh: [
+    { rate: 0.10, upTo: 17000 },
+    { rate: 0.12, upTo: 64850 },
+    { rate: 0.22, upTo: 103350 },
+    { rate: 0.24, upTo: 197300 },
+    { rate: 0.32, upTo: 250500 },
+    { rate: 0.35, upTo: 626350 },
+    { rate: 0.37, upTo: Infinity }
+  ]
+};
+
+function getBrackets(filingStatus) {
+  return FED_BRACKETS_2025[filingStatus] || FED_BRACKETS_2025.single;
+}
+
+// 2025 LTCG thresholds (total income at which 0%→15%→20% kicks in)
+const LTCG_THRESHOLDS_2025 = {
+  single: { zero: 48350,  fifteen: 533400 },
+  mfj:    { zero: 96700,  fifteen: 600050 },
+  mfs:    { zero: 48350,  fifteen: 300000 },
+  hoh:    { zero: 64750,  fifteen: 566700 }
+};
+
+function computeLTCGRate(filingStatus, totalIncome) {
+  const t = LTCG_THRESHOLDS_2025[filingStatus] || LTCG_THRESHOLDS_2025.single;
+  if (totalIncome <= t.zero) return 0;
+  if (totalIncome <= t.fifteen) return 0.15;
+  return 0.20;
+}
+
+// 2025 AMT exemptions and phase-out thresholds
+const AMT_2025 = {
+  single: { exemption: 88100,  phaseOutStart: 626350,  inflection: 232600 },
+  mfj:    { exemption: 137000, phaseOutStart: 1252700, inflection: 232600 },
+  mfs:    { exemption: 68500,  phaseOutStart: 626350,  inflection: 116300 },
+  hoh:    { exemption: 88100,  phaseOutStart: 626350,  inflection: 232600 }
+};
+
+function computeAMTExemption(filingStatus, amtBase) {
+  const p = AMT_2025[filingStatus] || AMT_2025.single;
+  const phaseOut = Math.max(0, (amtBase - p.phaseOutStart) * 0.25);
+  return Math.max(0, p.exemption - phaseOut);
+}
+
+// Additional Medicare / NIIT threshold by filing status
+const ADDL_MEDICARE_THRESHOLD = { single: 200000, mfj: 250000, mfs: 125000, hoh: 200000 };
 
 /* =================================================================
    EQUITY TAX ENGINE v3 — PLUGIN ARCHITECTURE
@@ -1661,9 +1726,9 @@ const TaxComponentRegistry = [
     applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full',
     compute: (ctx) => {
       const income = ctx.fullIncome;
-      const ytd    = ctx.inputs.ytdIncome || 0;
-      // Use actual 2025 brackets stacked above YTD income
-      const bands  = calcBracketBreakdown(ytd, income);
+      const ytd    = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const fs     = ctx.inputs.filingStatus || 'single';
+      const bands  = calcBracketBreakdown(ytd, income, fs);
       const tax    = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
       const effectiveRate = income > 0 ? tax / income : 0;
       return {
@@ -1677,9 +1742,9 @@ const TaxComponentRegistry = [
     label: 'Social Security',
     pillClass: 'pill-fica',
     applies: (ctx) => ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA
-                      && (ctx.inputs.ytdIncome || 0) < 176100,
+                      && (ctx.inputs.ytdSSWages || ctx.inputs.ytdIncome || 0) < 176100,
     compute: (ctx) => {
-      const ytd     = ctx.inputs.ytdIncome || 0;
+      const ytd     = ctx.inputs.ytdSSWages || ctx.inputs.ytdIncome || 0;
       const ssRoom  = Math.max(0, 176100 - ytd);
       const taxable = Math.min(ctx.fullIncome, ssRoom);
       return {
@@ -1703,13 +1768,17 @@ const TaxComponentRegistry = [
     label: 'Additional Medicare Tax',
     pillClass: 'pill-fica',
     applies: (ctx) => {
-      const ytd = ctx.inputs.ytdIncome || 0;
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const fs  = ctx.inputs.filingStatus || 'single';
+      const thr = ADDL_MEDICARE_THRESHOLD[fs] || 200000;
       return ctx.juris.isUS && ctx.scope === 'full' && !ctx.award.skipFICA
-             && (ytd + ctx.fullIncome) > 200000;
+             && (ytd + ctx.fullIncome) > thr;
     },
     compute: (ctx) => {
-      const ytd     = ctx.inputs.ytdIncome || 0;
-      const taxable = Math.max(0, (ytd + ctx.fullIncome) - Math.max(ytd, 200000));
+      const ytd     = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const fs      = ctx.inputs.filingStatus || 'single';
+      const thr     = ADDL_MEDICARE_THRESHOLD[fs] || 200000;
+      const taxable = Math.max(0, (ytd + ctx.fullIncome) - Math.max(ytd, thr));
       return {
         label: 'Additional Medicare (0.9%)', juris: 'FED', pillClass: 'pill-fica',
         taxable, rate: 0.009, tax: taxable * 0.009
@@ -1814,16 +1883,22 @@ const TaxComponentRegistry = [
       tax: ctx.fullIncome * ctx.inputs.cityRate
     })
   },
-  // NIIT only fires for capital gains portion (added by award-specific logic)
+  // NIIT fires for capital gains; only if total income exceeds filing-status threshold
   {
     id: 'niit',
     label: 'Net Investment Income Tax',
     pillClass: 'pill-niit',
-    applies: (ctx) => ctx.scope === 'capital_gain' && ctx.inputs.niitRate > 0,
+    applies: (ctx) => {
+      if (ctx.scope !== 'capital_gain') return false;
+      const fs  = ctx.inputs.filingStatus || 'single';
+      const thr = ADDL_MEDICARE_THRESHOLD[fs] || 200000;
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      return (ytd + ctx.fullIncome + (ctx.inputs.ytdLTCG || 0) + ctx.capitalGain) > thr;
+    },
     compute: (ctx) => ({
       label: 'NIIT (Net Investment Income)', juris: 'NIIT', pillClass: 'pill-niit',
-      taxable: ctx.capitalGain, rate: ctx.inputs.niitRate,
-      tax: ctx.capitalGain * ctx.inputs.niitRate
+      taxable: ctx.capitalGain, rate: 0.038,
+      tax: ctx.capitalGain * 0.038
     })
   },
   {
@@ -1831,11 +1906,20 @@ const TaxComponentRegistry = [
     label: 'US Federal LTCG',
     pillClass: 'pill-cap',
     applies: (ctx) => ctx.scope === 'capital_gain' && ctx.juris.isUS,
-    compute: (ctx) => ({
-      label: 'US Federal Long-Term Cap Gains', juris: 'LTCG', pillClass: 'pill-cap',
-      taxable: ctx.capitalGain, rate: ctx.inputs.ltcgRate,
-      tax: ctx.capitalGain * ctx.inputs.ltcgRate
-    })
+    compute: (ctx) => {
+      const fs = ctx.inputs.filingStatus || 'single';
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const ytdLTCG = ctx.inputs.ytdLTCG || 0;
+      // Total income for LTCG rate bracket = all ordinary income + prior LTCG + this cap gain
+      const totalForRate = ytd + ctx.fullIncome + ytdLTCG + ctx.capitalGain;
+      const rate = computeLTCGRate(fs, totalForRate);
+      return {
+        label: `US Federal Long-Term Cap Gains (${(rate*100).toFixed(0)}%)`,
+        juris: 'LTCG', pillClass: 'pill-cap',
+        taxable: ctx.capitalGain, rate,
+        tax: ctx.capitalGain * rate
+      };
+    }
   },
   {
     id: 'us_amt',
@@ -1844,17 +1928,22 @@ const TaxComponentRegistry = [
     applies: (ctx) => ctx.award.id === 'ISO' && ctx.scope === 'full' && ctx.juris.isUS,
     compute: (ctx) => {
       const spread = ctx.fullIncome;
-      const exemption = 137000;
-      const amtBase = Math.max(0, spread - exemption);
-      const amtTax = amtBase * 0.26;
-      // Use actual bracket tax (same as us_federal) for the regular-tax comparison
-      const ytd = ctx.inputs.ytdIncome || 0;
-      const bands = calcBracketBreakdown(ytd, spread);
+      const fs = ctx.inputs.filingStatus || 'single';
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const amtParams = AMT_2025[fs] || AMT_2025.single;
+      const amtIncome = ytd + spread;
+      const exemption = computeAMTExemption(fs, amtIncome);
+      const amtBase = Math.max(0, amtIncome - exemption);
+      // Two AMT rates: 26% up to inflection point, 28% above
+      const amtTax = amtBase <= amtParams.inflection
+        ? amtBase * 0.26
+        : amtParams.inflection * 0.26 + (amtBase - amtParams.inflection) * 0.28;
+      const bands = calcBracketBreakdown(ytd, spread, fs);
       const regularTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
       const netAMT = Math.max(0, amtTax - regularTax);
       return {
         label: 'AMT (Alternative Minimum Tax)', juris: 'AMT', pillClass: 'pill-amt',
-        taxable: spread, rate: 0.26, tax: netAMT, credit: 0
+        taxable: spread, rate: netAMT > 0 ? netAMT / spread : 0, tax: netAMT, credit: 0
       };
     }
   },
@@ -1865,8 +1954,9 @@ const TaxComponentRegistry = [
     applies: (ctx) => ctx.scope === 'full' && ctx.juris.isUS && ctx.sourceForeignIncomeTax > 0,
     compute: (ctx) => {
       const foreignIncomeTax = ctx.sourceForeignIncomeTax || 0;
-      const ytd = ctx.inputs.ytdIncome || 0;
-      const bands = calcBracketBreakdown(ytd, ctx.fullIncome);
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const fs  = ctx.inputs.filingStatus || 'single';
+      const bands = calcBracketBreakdown(ytd, ctx.fullIncome, fs);
       const usFedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
       const credit = Math.min(foreignIncomeTax, usFedTax);
       return {
@@ -2514,11 +2604,13 @@ function buildBracketRows(brackets) {
 }
 
 function buildFederalCard() {
-  const brackets = typeof FED_BRACKETS_2025 !== 'undefined' ? FED_BRACKETS_2025 : [];
+  const fs = document.getElementById('filing-status')?.value || 'single';
+  const fsLabels = { single: 'Single', mfj: 'Married Filing Jointly', mfs: 'Married Filing Separately', hoh: 'Head of Household' };
+  const brackets = getBrackets(fs);
   return `
     <div class="tax-rate-card">
       <div class="tax-rate-card-header">
-        <span>Federal Income Tax</span>
+        <span>Federal Income Tax <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${fsLabels[fs] || fs}</span></span>
         <span class="tax-juris-pill tax-juris-federal">Federal</span>
       </div>
       <div class="tax-rate-card-body">
@@ -2528,6 +2620,9 @@ function buildFederalCard() {
 }
 
 function buildFICACard() {
+  const fs  = document.getElementById('filing-status')?.value || 'single';
+  const thr = ADDL_MEDICARE_THRESHOLD[fs] || 200000;
+  const thrStr = '$' + thr.toLocaleString();
   return `
     <div class="tax-rate-card">
       <div class="tax-rate-card-header">
@@ -2545,17 +2640,20 @@ function buildFICACard() {
         </div>
         <div class="tax-rate-row">
           <span class="tax-rate-name">Additional Medicare</span>
-          <span class="tax-rate-val">0.9% <span style="font-weight:400;color:var(--text-muted)">> $200K</span></span>
+          <span class="tax-rate-val">0.9% <span style="font-weight:400;color:var(--text-muted)">&gt; ${thrStr}</span></span>
         </div>
         <div class="tax-rate-row">
           <span class="tax-rate-name">NIIT (Net Investment)</span>
-          <span class="tax-rate-val">3.8% <span style="font-weight:400;color:var(--text-muted)">> $200K</span></span>
+          <span class="tax-rate-val">3.8% <span style="font-weight:400;color:var(--text-muted)">&gt; ${thrStr}</span></span>
         </div>
       </div>
     </div>`;
 }
 
 function buildLTCGCard() {
+  const fs = document.getElementById('filing-status')?.value || 'single';
+  const thr = LTCG_THRESHOLDS_2025[fs] || LTCG_THRESHOLDS_2025.single;
+  const fmt = n => '$' + n.toLocaleString();
   return `
     <div class="tax-rate-card">
       <div class="tax-rate-card-header">
@@ -2566,17 +2664,18 @@ function buildLTCGCard() {
         <div class="tax-bracket-list">
           <div class="tax-bracket-row">
             <span class="tax-bracket-rate">0%</span>
-            <span class="tax-bracket-range">$0 – $47,025</span>
+            <span class="tax-bracket-range">$0 – ${fmt(thr.zero)}</span>
           </div>
           <div class="tax-bracket-row">
             <span class="tax-bracket-rate">15%</span>
-            <span class="tax-bracket-range">$47,025 – $518,900</span>
+            <span class="tax-bracket-range">${fmt(thr.zero)} – ${fmt(thr.fifteen)}</span>
           </div>
           <div class="tax-bracket-row">
             <span class="tax-bracket-rate">20%</span>
-            <span class="tax-bracket-range">$518,900+</span>
+            <span class="tax-bracket-range">${fmt(thr.fifteen)}+</span>
           </div>
         </div>
+        <div style="font-size:11px;color:var(--text-subtle);margin-top:6px">Rate auto-computed from income stacking</div>
       </div>
     </div>`;
 }
@@ -3389,7 +3488,7 @@ function renderSimpleSummary(result) {
   if (!el) return;
 
   const inputs = getInputs();
-  const ytdIncome = inputs.ytdIncome || 0;
+  const ytdIncome = inputs.stackedYTDOrdinary || inputs.ytdIncome || 0;
   const ytdTaxPaid = inputs.ytdTaxPaid || 0;
 
   const totalIncome = result.income.ordinaryIncome + result.income.capitalGain;
@@ -3407,7 +3506,7 @@ function renderSimpleSummary(result) {
   }
 
   // Calculate marginal rate
-  const bands = calcBracketBreakdown(ytdIncome, result.income.ordinaryIncome);
+  const bands = calcBracketBreakdown(ytdIncome, result.income.ordinaryIncome, inputs.filingStatus || 'single');
   const marginalRate = bands.length > 0 ? bands[bands.length - 1].rate : 0;
   const marginalRateStr = (marginalRate * 100).toFixed(0);
 
@@ -3601,11 +3700,11 @@ function getCurrentAward() {
 }
 
 // Calculate which brackets income falls into
-function calcBracketBreakdown(ytdIncome, exerciseIncome) {
+function calcBracketBreakdown(ytdIncome, exerciseIncome, filingStatus = 'single') {
   const bands = [];
   let prev = 0;
   const total = ytdIncome + exerciseIncome;
-  for (const bracket of FED_BRACKETS_2025) {
+  for (const bracket of getBrackets(filingStatus)) {
     const bandTop = Math.min(bracket.upTo, total);
     const width = bandTop - prev;
     if (width <= 0) break;
@@ -3666,6 +3765,17 @@ function getInputs() {
     }
   }
 
+  // Stacked YTD ordinary income (salary + prior equity events + STCG) — bracket base
+  inputs.stackedYTDOrdinary = (inputs.ytdIncome || 0)
+    + (inputs.ytdEquityIncome || 0)
+    + (inputs.ytdSTCG || 0);
+
+  // FX conversion: if award is denominated in a foreign currency, convert FMV/strike to USD
+  if (inputs.currency !== 'USD' && inputs.fxRate && inputs.fxRate !== 1) {
+    if (inputs.fmv)    inputs.fmv    = inputs.fmv    * inputs.fxRate;
+    if (inputs.strike) inputs.strike = inputs.strike * inputs.fxRate;
+  }
+
   return inputs;
 }
 
@@ -3713,6 +3823,9 @@ function calc() {
 
   // Render simple summary (only visible in simple mode)
   renderSimpleSummary(result);
+
+  // Re-render tax rates section (brackets change with filing status)
+  renderTaxRatesSection();
 
   // Sync state to URL (debounced)
   updateURL();
@@ -3980,18 +4093,19 @@ function renderBracketViz(result, inputs) {
   const wrap = document.getElementById('bracket-viz-wrap');
   if (!wrap) return;
 
-  const ytdIncome      = inputs.ytdIncome || 0;
+  const ytdIncome      = inputs.stackedYTDOrdinary || inputs.ytdIncome || 0;
   const exerciseIncome = result.income.ordinaryIncome;
+  const fs             = inputs.filingStatus || 'single';
 
   if (exerciseIncome === 0) { wrap.innerHTML = ''; return; }
 
   const totalIncome = ytdIncome + exerciseIncome;
   const rateStr = r => (r * 100).toFixed(0) + '%';
-  const TOP_CAP = 700000;
+  const TOP_CAP = 800000;
 
-  // Per-bracket data
+  // Per-bracket data (filing-status brackets)
   let prev = 0;
-  const bracketData = FED_BRACKETS_2025.map(b => {
+  const bracketData = getBrackets(fs).map(b => {
     const lo = prev;
     const hi = b.upTo === Infinity ? TOP_CAP : b.upTo;
     prev = hi;
@@ -4311,7 +4425,7 @@ function computeProjection() {
     if (isUS && award) {
       const tempIncome = award.computeIncome(yi);
       if (tempIncome.ordinaryIncome > 0) {
-        const bands = calcBracketBreakdown(yi.ytdIncome, tempIncome.ordinaryIncome);
+        const bands = calcBracketBreakdown(yi.stackedYTDOrdinary || yi.ytdIncome, tempIncome.ordinaryIncome, yi.filingStatus || 'single');
         const actualFedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
         yi.fedRate = actualFedTax / tempIncome.ordinaryIncome;
       }
@@ -4364,7 +4478,7 @@ function computeProjection() {
       if (isUS && award) {
         const tmp = award.computeIncome(crYi);
         if (tmp.ordinaryIncome > 0) {
-          const bands = calcBracketBreakdown(crYi.ytdIncome, tmp.ordinaryIncome);
+          const bands = calcBracketBreakdown(crYi.stackedYTDOrdinary || crYi.ytdIncome, tmp.ordinaryIncome, crYi.filingStatus || 'single');
           const fedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
           crYi.fedRate = fedTax / tmp.ordinaryIncome;
         }
