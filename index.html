@@ -2001,8 +2001,9 @@ function computeVestEndDate() {
 }
 
 function updateVestEndDisplay() {
-  const vestEnd = computeVestEndDate();
-  document.getElementById('vest-end-display').textContent = vestEnd || '—';
+  const el = document.getElementById('vest-end-display');
+  if (!el) return;
+  el.textContent = computeVestEndDate() || '—';
 }
 
 function onGrantDateChange() {
