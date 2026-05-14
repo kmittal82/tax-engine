@@ -1405,14 +1405,17 @@ const SourcingStrategyRegistry = {
   // OECD-standard workday accrual (most common)
   workday: {
     name: 'Workday Accrual',
-    description: 'Allocates between jurisdictions based on working days during sourcing period',
+    description: 'Allocates between jurisdictions based on days in each jurisdiction / total vesting period days',
     compute(inputs) {
+      // Denominator = total vesting period days (grant → vest end); fallback to row sum
+      const total = inputs.totalVestingDays
+        || inputs.mobility?.reduce((s, r) => s + (r.days || 0), 0)
+        || (inputs.grantDays + inputs.vestDays)
+        || 1;
       if (inputs.mobility?.length >= 2) {
-        const total = inputs.mobility.reduce((s, r) => s + (r.days || 0), 0) || 1;
         const perLeg = inputs.mobility.map(r => (r.days || 0) / total);
         return { grant: perLeg[0], vest: perLeg[perLeg.length - 1], perLeg };
       }
-      const total = inputs.grantDays + inputs.vestDays || 1;
       return { grant: inputs.grantDays / total, vest: inputs.vestDays / total, perLeg: null };
     }
   },
@@ -2170,16 +2173,24 @@ function renderVestingScheduleBreakdown() {
 // MOBILITY TABLE FUNCTIONS
 // =====================================================
 
+function getVestingPeriodDays() {
+  const gd = document.getElementById('grant-date').value;
+  const vestEnd = computeVestEndDate();
+  if (gd && vestEnd) return Math.max(1, daysBetween(gd, vestEnd));
+  return mobilityRows.reduce((s, r) => s + (r.days || 0), 0) || 1;
+}
+
 function renderMobilityTable() {
   const tbody = document.getElementById('mobility-tbody');
-  const totalDays = mobilityRows.reduce((s, r) => s + (r.days || 0), 0) || 1;
+  const totalVestingDays = getVestingPeriodDays();
+  const rowDaysSum = mobilityRows.reduce((s, r) => s + (r.days || 0), 0);
 
   tbody.innerHTML = '';
   mobilityRows.forEach((row, i) => {
     const tr = document.createElement('tr');
     const isLast = i === mobilityRows.length - 1;
     const role = isLast ? 'RESIDENT' : 'SOURCE';
-    const allocPct = ((row.days || 0) / totalDays * 100).toFixed(1);
+    const allocPct = ((row.days || 0) / totalVestingDays * 100).toFixed(1);
 
     // From Date input
     const fromInput = document.createElement('input');
@@ -2243,7 +2254,10 @@ function renderMobilityTable() {
   });
 
   // Update total days badge
-  document.getElementById('mobility-total-days-badge').textContent = `Total: ${totalDays} days`;
+  const covered = rowDaysSum;
+  const badge = document.getElementById('mobility-total-days-badge');
+  badge.textContent = `${covered} of ${totalVestingDays} days covered`;
+  badge.style.color = covered > totalVestingDays ? '#ef4444' : (covered < totalVestingDays ? '#d97706' : '#16a34a');
 
   // Update hidden inputs for backward compat
   document.getElementById('grant-country').value = mobilityRows[0]?.country || 'US';
@@ -2594,7 +2608,9 @@ const CalcEngine = {
 
   computeBaseline(inputs, fixedLoc) {
     const baselineInputs = { ...inputs };
-    const totalDays = inputs.mobility?.reduce((s, r) => s + r.days, 0) || (inputs.grantDays + inputs.vestDays);
+    const totalDays = inputs.totalVestingDays
+      || inputs.mobility?.reduce((s, r) => s + r.days, 0)
+      || (inputs.grantDays + inputs.vestDays);
 
     if (fixedLoc === 'grant') {
       const fixLoc = inputs.mobility?.[0] || { country: inputs.grantCountry, state: inputs.grantState };
@@ -3105,6 +3121,7 @@ function getInputs() {
     vestSchedule: document.getElementById('vest-schedule').value || '4y1c',
     grantUnits: parseFloat(document.getElementById('grant-units').value) || 0,
     grantFMV: parseFloat(document.getElementById('grant-fmv').value) || 0,
+    totalVestingDays: getVestingPeriodDays(),
     grantCountry: mobilityRows[0]?.country || 'US',
     grantState: mobilityRows[0]?.state || '',
     vestCountry: mobilityRows[mobilityRows.length - 1]?.country || 'US',
