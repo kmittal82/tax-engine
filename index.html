@@ -2047,8 +2047,6 @@ function onMobilityDateChange(i, field, value) {
 }
 
 function onVestingInputChange() {
-  grantUnits = parseFloat(document.getElementById('grant-units').value) || 0;
-  grantFMV = parseFloat(document.getElementById('grant-fmv').value) || 0;
   renderVestingScheduleBreakdown();
   calc();
 }
@@ -2056,50 +2054,61 @@ function onVestingInputChange() {
 function computeVestingSchedule() {
   const gd = document.getElementById('grant-date').value;
   const sched = document.getElementById('vest-schedule').value;
+  const units = parseFloat(document.getElementById('grant-units').value) || 0;
 
-  if (!gd || !grantUnits || grantUnits === 0) return [];
+  if (!gd || units <= 0) return [];
 
-  const cfg = VEST_SCHEDULES[sched];
-  let years = cfg ? cfg.years : (parseInt(document.getElementById('vest-years-custom').value) || 4);
-  let cliffMonths = cfg ? cfg.cliffMonths : 0;
+  const events = [];
 
-  const schedule = [];
-
-  // Add cliff date (if any)
-  if (cliffMonths > 0) {
-    const cliffDate = addMonths(gd, cliffMonths);
-    const unitsAtCliff = (grantUnits * cliffMonths) / (years * 12);
-    schedule.push({ date: cliffDate, units: unitsAtCliff });
-  }
-
-  // Add anniversary dates
-  const monthsPerYear = 12;
-  for (let yr = 1; yr <= years; yr++) {
-    const anniversaryDate = addYears(gd, yr);
-    let unitsAtAnniversary;
-
-    if (cliffMonths > 0 && yr === Math.ceil(cliffMonths / 12)) {
-      // Skip if this is the cliff anniversary
-      continue;
-    } else if (cliffMonths > 0) {
-      // After cliff: remaining units spread evenly
-      const remainingMonths = (years * 12) - cliffMonths;
-      unitsAtAnniversary = (grantUnits - (grantUnits * cliffMonths) / (years * 12)) / (years - Math.ceil(cliffMonths / 12));
-    } else {
-      // No cliff: units spread evenly
-      unitsAtAnniversary = grantUnits / years;
+  switch (sched) {
+    case '4y1c': {
+      // 4 equal annual tranches; first one is cliff at year 1
+      const u = units / 4;
+      for (let yr = 1; yr <= 4; yr++)
+        events.push({ date: addYears(gd, yr), units: u, isCliff: yr === 1 });
+      break;
     }
-
-    schedule.push({ date: anniversaryDate, units: unitsAtAnniversary });
+    case '3y1c': {
+      const u = units / 3;
+      for (let yr = 1; yr <= 3; yr++)
+        events.push({ date: addYears(gd, yr), units: u, isCliff: yr === 1 });
+      break;
+    }
+    case '2y6c': {
+      // 4 equal tranches every 6 months; first one is the cliff
+      const u = units / 4;
+      for (let i = 1; i <= 4; i++)
+        events.push({ date: addMonths(gd, i * 6), units: u, isCliff: i === 1 });
+      break;
+    }
+    case '4y': {
+      const u = units / 4;
+      for (let yr = 1; yr <= 4; yr++)
+        events.push({ date: addYears(gd, yr), units: u });
+      break;
+    }
+    case 'cliff': {
+      events.push({ date: addYears(gd, 1), units, isCliff: true });
+      break;
+    }
+    case 'custom': {
+      const customYears = parseInt(document.getElementById('vest-years-custom').value) || 4;
+      const u = units / customYears;
+      for (let yr = 1; yr <= customYears; yr++)
+        events.push({ date: addYears(gd, yr), units: u });
+      break;
+    }
   }
 
-  return schedule;
+  return events;
 }
 
 function renderVestingScheduleBreakdown() {
   const schedule = computeVestingSchedule();
   const container = document.getElementById('vesting-schedule-container');
   const tbody = document.getElementById('vesting-tbody');
+
+  const fmv = parseFloat(document.getElementById('grant-fmv').value) || 0;
 
   if (!schedule || schedule.length === 0) {
     container.style.display = 'none';
@@ -2109,65 +2118,50 @@ function renderVestingScheduleBreakdown() {
   container.style.display = 'block';
   tbody.innerHTML = '';
 
-  let cumulativeUnits = 0;
-  let cumulativeValue = 0;
+  let cumUnits = 0;
+  let cumValue = 0;
+  const fmt = v => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   schedule.forEach(item => {
+    cumUnits += item.units;
+    cumValue += item.units * fmv;
+
     const tr = document.createElement('tr');
-    cumulativeUnits += item.units;
-    cumulativeValue += item.units * grantFMV;
+    if (item.isCliff) tr.style.fontWeight = '600';
 
-    const dateCell = document.createElement('td');
-    dateCell.textContent = item.date;
+    const cells = [
+      { text: item.date + (item.isCliff ? ' ★' : ''), align: 'left' },
+      { text: item.units.toLocaleString(undefined, { maximumFractionDigits: 2 }), align: 'right' },
+      { text: fmv > 0 ? fmt(item.units * fmv) : '—', align: 'right' },
+      { text: cumUnits.toLocaleString(undefined, { maximumFractionDigits: 2 }), align: 'right' },
+      { text: fmv > 0 ? fmt(cumValue) : '—', align: 'right' },
+    ];
 
-    const unitsCell = document.createElement('td');
-    unitsCell.className = 'right';
-    unitsCell.textContent = item.units.toFixed(2);
+    cells.forEach(c => {
+      const td = document.createElement('td');
+      td.textContent = c.text;
+      if (c.align === 'right') td.className = 'right';
+      tr.appendChild(td);
+    });
 
-    const valueCell = document.createElement('td');
-    valueCell.className = 'right';
-    valueCell.textContent = (item.units * grantFMV).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-
-    const cumUnitsCell = document.createElement('td');
-    cumUnitsCell.className = 'right';
-    cumUnitsCell.textContent = cumulativeUnits.toFixed(2);
-
-    const cumValueCell = document.createElement('td');
-    cumValueCell.className = 'right';
-    cumValueCell.textContent = cumulativeValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-
-    tr.appendChild(dateCell);
-    tr.appendChild(unitsCell);
-    tr.appendChild(valueCell);
-    tr.appendChild(cumUnitsCell);
-    tr.appendChild(cumValueCell);
     tbody.appendChild(tr);
   });
 
-  // Add total row
+  // Total row
   const totalRow = document.createElement('tr');
   totalRow.className = 'vesting-total';
-
-  const totalLabelCell = document.createElement('td');
-  totalLabelCell.textContent = 'TOTAL';
-  totalRow.appendChild(totalLabelCell);
-
-  const totalUnitsCell = document.createElement('td');
-  totalUnitsCell.className = 'right';
-  totalUnitsCell.textContent = cumulativeUnits.toFixed(2);
-  totalRow.appendChild(totalUnitsCell);
-
-  const totalValueCell = document.createElement('td');
-  totalValueCell.className = 'right';
-  totalValueCell.textContent = cumulativeValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-  totalRow.appendChild(totalValueCell);
-
-  const blankCell1 = document.createElement('td');
-  totalRow.appendChild(blankCell1);
-
-  const blankCell2 = document.createElement('td');
-  totalRow.appendChild(blankCell2);
-
+  [
+    { text: 'TOTAL', align: 'left' },
+    { text: cumUnits.toLocaleString(undefined, { maximumFractionDigits: 2 }), align: 'right' },
+    { text: fmv > 0 ? fmt(cumValue) : '—', align: 'right' },
+    { text: '', align: '' },
+    { text: '', align: '' },
+  ].forEach(c => {
+    const td = document.createElement('td');
+    td.textContent = c.text;
+    if (c.align === 'right') td.className = 'right';
+    totalRow.appendChild(td);
+  });
   tbody.appendChild(totalRow);
 }
 
