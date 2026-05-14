@@ -824,6 +824,50 @@ body.mode-projection .concept-banner { display: none !important; }
   font-weight: 600;
   border-top: 1px solid var(--border);
 }
+/* Tax Year Context Section */
+.tax-context-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+.tax-context-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.tax-context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.tax-context-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tax-context-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.tax-context-card .field { margin-bottom: 0; }
+.tax-context-card .field label { font-size: 11px; }
+.tax-context-card .field input,
+.tax-context-card .field select { font-size: 12px; padding: 5px 8px; }
+
 /* Tax Rates Section */
 .tax-rates-grid {
   display: grid;
@@ -1015,6 +1059,157 @@ body.mode-projection .concept-banner { display: none !important; }
     </div>
   </div>
 
+  <!-- Tax Year Context Section -->
+  <div class="tax-context-section">
+    <div class="timeline-section-title">Tax Year Context</div>
+
+    <!-- Row 1: Filing profile -->
+    <div class="tax-context-row">
+      <div class="timeline-field">
+        <label>Tax Year</label>
+        <select id="tax-year" onchange="calc()">
+          <option value="2025" selected>2025</option>
+          <option value="2024">2024</option>
+          <option value="2023">2023</option>
+        </select>
+      </div>
+      <div class="timeline-field">
+        <label>Filing Status</label>
+        <select id="filing-status" onchange="calc()">
+          <option value="single" selected>Single</option>
+          <option value="mfj">Married Filing Jointly</option>
+          <option value="mfs">Married Filing Separately</option>
+          <option value="hoh">Head of Household</option>
+        </select>
+      </div>
+      <div class="timeline-field">
+        <label>Residency</label>
+        <select id="residency-status" onchange="calc()">
+          <option value="citizen" selected>US Citizen / Resident</option>
+          <option value="resident_alien">Resident Alien (Green Card)</option>
+          <option value="nra">Non-Resident Alien</option>
+        </select>
+      </div>
+      <div class="timeline-field">
+        <label>Award Currency</label>
+        <select id="award-currency" onchange="onCurrencyChange()">
+          <option value="USD" selected>USD — US Dollar</option>
+          <option value="EUR">EUR — Euro</option>
+          <option value="GBP">GBP — British Pound</option>
+          <option value="CAD">CAD — Canadian Dollar</option>
+          <option value="AUD">AUD — Australian Dollar</option>
+          <option value="INR">INR — Indian Rupee</option>
+          <option value="SGD">SGD — Singapore Dollar</option>
+          <option value="HKD">HKD — Hong Kong Dollar</option>
+          <option value="JPY">JPY — Japanese Yen</option>
+          <option value="CNY">CNY — Chinese Yuan</option>
+          <option value="BRL">BRL — Brazilian Real</option>
+          <option value="SEK">SEK — Swedish Krona</option>
+          <option value="CHF">CHF — Swiss Franc</option>
+          <option value="ILS">ILS — Israeli Shekel</option>
+          <option value="AED">AED — UAE Dirham</option>
+          <option value="KRW">KRW — Korean Won</option>
+          <option value="TWD">TWD — Taiwan Dollar</option>
+        </select>
+      </div>
+      <div class="timeline-field" id="fx-rate-field" style="display:none">
+        <label>FX Rate to USD</label>
+        <input type="number" id="fx-rate" min="0.0001" step="0.001" value="1" oninput="calc()">
+      </div>
+    </div>
+
+    <!-- Row 2: Three cards -->
+    <div class="tax-context-grid">
+
+      <!-- YTD Income -->
+      <div class="tax-context-card">
+        <div class="tax-context-card-title">YTD Income</div>
+        <div class="field">
+          <label>W-2 / Salary <span class="helper">earned before this event</span></label>
+          <input type="number" id="ytd-income" min="0" step="1000" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Prior Equity Income <span class="helper">RSUs / NQ vested this year</span></label>
+          <input type="number" id="ytd-equity-income" min="0" step="1000" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>SS Wages YTD <span class="helper">for $176,100 cap tracking</span></label>
+          <input type="number" id="ytd-ss-wages" min="0" step="1000" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Short-Term Capital Gains <span class="helper">realized this year</span></label>
+          <input type="number" id="ytd-stcg" min="0" step="100" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Long-Term Capital Gains <span class="helper">realized this year</span></label>
+          <input type="number" id="ytd-ltcg" min="0" step="100" value="0" oninput="calc()">
+        </div>
+      </div>
+
+      <!-- YTD Taxes Paid -->
+      <div class="tax-context-card">
+        <div class="tax-context-card-title">YTD Taxes Paid</div>
+        <div class="field">
+          <label>Federal Withheld <span class="helper">W-2 box 2</span></label>
+          <input type="number" id="ytd-tax-paid" min="0" step="100" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>State Withheld <span class="helper">W-2 box 17</span></label>
+          <input type="number" id="ytd-state-tax-paid" min="0" step="100" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>Estimated Payments <span class="helper">quarterly 1040-ES</span></label>
+          <input type="number" id="ytd-estimated-payments" min="0" step="100" value="0" oninput="calc()">
+        </div>
+        <div class="field">
+          <label>City / Local Tax</label>
+          <select id="city-rate" onchange="calc()">
+            <option value="0" selected>None</option>
+            <option value="0.03876">NYC (3.876%)</option>
+            <option value="0.03762">Philadelphia Wage (3.76%)</option>
+            <option value="0.01477">Yonkers Resident (1.48%)</option>
+            <option value="0.005">Other (0.5%)</option>
+            <option value="0.01">Other (1.0%)</option>
+            <option value="0.025">Other (2.5%)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Federal Tax Settings -->
+      <div class="tax-context-card">
+        <div class="tax-context-card-title">Federal Tax Settings</div>
+        <div class="field">
+          <label>Federal LTCG Rate</label>
+          <select id="ltcg-rate" onchange="calc()">
+            <option value="0">0% (low income)</option>
+            <option value="0.15" selected>15% (standard)</option>
+            <option value="0.20">20% (high income)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Net Investment Income Tax (NIIT)</label>
+          <select id="niit-toggle" onchange="calc()">
+            <option value="0" selected>Not applicable</option>
+            <option value="0.038">Apply 3.8% on capital gains</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>AMT Status <span class="helper">ISO / NQSO exercise</span></label>
+          <select id="amt-status" onchange="calc()">
+            <option value="full" selected>Full exemption ($137,000)</option>
+            <option value="phaseout">Phase-out range</option>
+            <option value="none">Exemption fully phased out</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Prior Year AMT Credit <span class="helper">Form 8801 carryforward</span></label>
+          <input type="number" id="amt-credit-carryforward" min="0" step="100" value="0" oninput="calc()">
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <div class="main-grid">
     <div>
       <div class="panel">
@@ -1038,50 +1233,7 @@ body.mode-projection .concept-banner { display: none !important; }
           <input type="hidden" id="grant-days"><input type="hidden" id="grant-days-num">
           <input type="hidden" id="vest-days"><input type="hidden" id="vest-days-num">
 
-          <hr class="divider">
-          <div class="sec-label">Common Tax Parameters</div>
-
-          <div class="advanced-only">
-          <div class="field">
-            <label>Federal LTCG Rate <span class="helper">(for capital gains tax)</span></label>
-            <label>Federal LTCG Rate <span class="helper">(for capital gains tax)</span></label>
-            <select id="ltcg-rate" onchange="calc()">
-              <option value="0">0%</option>
-              <option value="0.15" selected>15%</option>
-              <option value="0.20">20%</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label>NIIT (Net Investment Income) <span class="helper">(3.8% above threshold)</span></label>
-            <select id="niit-toggle" onchange="calc()">
-              <option value="0" selected>Not applicable</option>
-              <option value="0.038">Apply 3.8% on capital gains</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label>City / Local Tax (NYC, Yonkers, Phila)</label>
-            <select id="city-rate" onchange="calc()">
-              <option value="0" selected>None</option>
-              <option value="0.03876">NYC (3.876%)</option>
-              <option value="0.03762">Philadelphia Wage (3.76%)</option>
-              <option value="0.01477">Yonkers Resident (1.48%)</option>
-              <option value="0.025">Other (2.5%)</option>
-            </select>
-          </div>
-
-          <hr class="divider">
-
-          <div class="field">
-            <label>YTD Ordinary Income <span class="helper">(already earned this year)</span></label>
-            <input type="number" id="ytd-income" min="0" step="1000" value="0" oninput="calc()">
-          </div>
-          <div class="field">
-            <label>YTD Taxes Withheld <span class="helper">(W-2 / paystubs)</span></label>
-            <input type="number" id="ytd-tax-paid" min="0" step="100" value="0" oninput="calc()">
-          </div>
-          </div>
+          <!-- Tax settings moved to Tax Year Context section above -->
 
         </div>
       </div>
@@ -2232,6 +2384,12 @@ function onVestScheduleChange() {
   calc();
 }
 
+function onCurrencyChange() {
+  const currency = document.getElementById('award-currency').value;
+  document.getElementById('fx-rate-field').style.display = currency === 'USD' ? 'none' : '';
+  calc();
+}
+
 function onMobilityDateChange(i, field, value) {
   mobilityRows[i][field] = value;
   // Auto-calculate days from dates if both set
@@ -3086,6 +3244,23 @@ function applyState(state) {
   if (state.niitRate != null) {
     document.getElementById('niit-toggle').value = state.niitRate > 0 ? '0.038' : '0';
   }
+  // Hydrate Tax Year Context fields
+  setVal('tax-year', state.taxYear);
+  setVal('filing-status', state.filingStatus);
+  setVal('residency-status', state.residencyStatus);
+  setVal('award-currency', state.currency);
+  setVal('fx-rate', state.fxRate);
+  setVal('ytd-equity-income', state.ytdEquityIncome);
+  setVal('ytd-ss-wages', state.ytdSSWages);
+  setVal('ytd-stcg', state.ytdSTCG);
+  setVal('ytd-ltcg', state.ytdLTCG);
+  setVal('ytd-state-tax-paid', state.ytdStateTaxPaid);
+  setVal('ytd-estimated-payments', state.ytdEstimatedPayments);
+  setVal('amt-status', state.amtStatus);
+  setVal('amt-credit-carryforward', state.amtCreditCarryforward);
+  if (state.currency && state.currency !== 'USD') {
+    document.getElementById('fx-rate-field').style.display = '';
+  }
 
   const award = AwardRegistry[state.awardType] || getCurrentAward();
   for (const field of award.fields) {
@@ -3494,6 +3669,19 @@ function getInputs() {
     grantUnits: parseFloat(document.getElementById('grant-units').value) || 0,
     grantFMV: parseFloat(document.getElementById('grant-fmv').value) || 0,
     totalVestingDays: getVestingPeriodDays(),
+    taxYear:           document.getElementById('tax-year')?.value || '2025',
+    filingStatus:      document.getElementById('filing-status')?.value || 'single',
+    residencyStatus:   document.getElementById('residency-status')?.value || 'citizen',
+    currency:          document.getElementById('award-currency')?.value || 'USD',
+    fxRate:            parseFloat(document.getElementById('fx-rate')?.value) || 1,
+    ytdEquityIncome:   parseFloat(document.getElementById('ytd-equity-income')?.value) || 0,
+    ytdSSWages:        parseFloat(document.getElementById('ytd-ss-wages')?.value) || 0,
+    ytdSTCG:           parseFloat(document.getElementById('ytd-stcg')?.value) || 0,
+    ytdLTCG:           parseFloat(document.getElementById('ytd-ltcg')?.value) || 0,
+    ytdStateTaxPaid:   parseFloat(document.getElementById('ytd-state-tax-paid')?.value) || 0,
+    ytdEstimatedPayments: parseFloat(document.getElementById('ytd-estimated-payments')?.value) || 0,
+    amtStatus:         document.getElementById('amt-status')?.value || 'full',
+    amtCreditCarryforward: parseFloat(document.getElementById('amt-credit-carryforward')?.value) || 0,
     grantCountry: mobilityRows[0]?.country || 'US',
     grantState: mobilityRows[0]?.state || '',
     vestCountry: mobilityRows[mobilityRows.length - 1]?.country || 'US',
