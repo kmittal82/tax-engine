@@ -3173,9 +3173,9 @@ const CalcEngine = {
     // 9. Handle capital gains (sourced to resident/vest location)
     if (income.capitalGain > 0) {
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: residentJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: income.capitalGain, sourceForeignIncomeTax: allSourceForeignTax })) continue;
+        if (!comp.applies({ juris: residentJuris, scope: 'capital_gain', inputs, award, fullIncome: income.ordinaryIncome, capitalGain: income.capitalGain, allocatedIncome: income.capitalGain, sourceForeignIncomeTax: allSourceForeignTax })) continue;
         const result = comp.compute({
-          juris: residentJuris, scope: 'capital_gain', inputs, award, capitalGain: income.capitalGain, allocatedIncome: income.capitalGain, sourceForeignIncomeTax: allSourceForeignTax
+          juris: residentJuris, scope: 'capital_gain', inputs, award, fullIncome: income.ordinaryIncome, capitalGain: income.capitalGain, allocatedIncome: income.capitalGain, sourceForeignIncomeTax: allSourceForeignTax
         });
         taxResults.push({ ...result, scope: 'capital_gain', allocPct: residentAllocPct, legIndex: legs.length - 1 });
       }
@@ -3274,21 +3274,14 @@ function applyState(state) {
   isApplyingState = true;
 
   // Hydrate grant date, vest schedule, units, and FMV
+  const setSafe = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   if (state.grantDate) {
-    document.getElementById('grant-date').value = state.grantDate;
+    setSafe('grant-date', state.grantDate);
     grantDate = state.grantDate;
   }
-  if (state.vestSchedule) {
-    document.getElementById('vest-schedule').value = state.vestSchedule;
-  }
-  if (state.grantUnits != null) {
-    document.getElementById('grant-units').value = state.grantUnits;
-    grantUnits = state.grantUnits;
-  }
-  if (state.grantFMV != null) {
-    document.getElementById('grant-fmv').value = state.grantFMV;
-    grantFMV = state.grantFMV;
-  }
+  if (state.vestSchedule) setSafe('vest-schedule', state.vestSchedule);
+  if (state.grantUnits != null) setSafe('shares', state.grantUnits);
+  if (state.grantFMV != null) setSafe('fmv', state.grantFMV);
 
   // Hydrate mobility data
   if (state.mobility?.length >= 2) {
@@ -3315,7 +3308,7 @@ function applyState(state) {
   setVal('ytd-income', state.ytdIncome);
   setVal('ytd-tax-paid', state.ytdTaxPaid);
   if (state.niitRate != null) {
-    document.getElementById('niit-toggle').value = state.niitRate > 0 ? '0.038' : '0';
+    setVal('niit-toggle', state.niitRate > 0 ? '0.038' : '0');
   }
   // Hydrate Tax Year Context fields
   setVal('tax-year', state.taxYear);
@@ -3332,7 +3325,8 @@ function applyState(state) {
   setVal('amt-status', state.amtStatus);
   setVal('amt-credit-carryforward', state.amtCreditCarryforward);
   if (state.currency && state.currency !== 'USD') {
-    document.getElementById('fx-rate-field').style.display = '';
+    const fxField = document.getElementById('fx-rate-field');
+    if (fxField) fxField.style.display = '';
   }
 
   const award = AwardRegistry[state.awardType] || getCurrentAward();
@@ -3837,12 +3831,9 @@ function calc() {
 // Update qualified pill
 function updateQualifiedPill(side, juris, award) {
   const pill = document.getElementById(side + '-qualified-pill');
+  if (!pill) return;
   const qp = juris.qualifiedPlans[award.id];
-  if (qp) {
-    pill.innerHTML = `<div class="qualified-plan-pill">${qp.name}</div>`;
-  } else {
-    pill.innerHTML = '';
-  }
+  pill.innerHTML = qp ? `<div class="qualified-plan-pill">${qp.name}</div>` : '';
 }
 
 // Render timeline
