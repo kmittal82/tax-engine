@@ -2012,6 +2012,7 @@ function onGrantDateChange() {
     mobilityRows[0].fromDate = grantDate;
   }
   updateVestEndDisplay();
+  renderVestingScheduleBreakdown();
   renderMobilityTable();
   calc();
 }
@@ -2029,6 +2030,7 @@ function onVestScheduleChange() {
     }
   }
   updateVestEndDisplay();
+  renderVestingScheduleBreakdown();
   renderMobilityTable();
   calc();
 }
