@@ -1268,6 +1268,7 @@ body.mode-projection .concept-banner { display: none !important; }
               <thead>
                 <tr>
                   <th>Tax Component</th>
+                  <th class="right">Allocation</th>
                   <th class="right">Taxable Amount</th>
                   <th class="right">Rate</th>
                   <th class="right">Gross Tax</th>
@@ -1802,14 +1803,20 @@ const TaxComponentRegistry = [
     pillClass: 'pill-vest',
     applies: (ctx) => ctx.juris.isUS && ctx.scope === 'resident' && ctx.juris.stateRate > 0,
     compute: (ctx) => {
-      const grossTax = ctx.fullIncome * ctx.juris.stateRate;
-      const sourcedIncome = ctx.fullIncome - ctx.allocatedIncome; // income that came from source state
-      const sourceStateTax = ctx.sourceStateTax || 0;
-      const maxCredit = sourcedIncome * ctx.juris.stateRate;
-      const credit = Math.min(sourceStateTax, maxCredit);
+      const rate = ctx.juris.stateRate;
+      const grossTax = ctx.fullIncome * rate;
+      // Per-leg credit cap (GA IT-511, NY IT-112-R, MA Sch OJC, etc.):
+      // For each non-resident leg, credit = min(legTax, legAllocatedIncome × residentRate).
+      // A zero-tax leg (e.g., TX, FL) generates no credit; its allocated income cannot
+      // be used to shelter credit from a high-tax leg like CA.
+      const legs = ctx.sourceStateLegs || [];
+      const credit = legs.reduce(
+        (sum, leg) => sum + Math.min(leg.tax, leg.allocatedIncome * rate),
+        0
+      );
       return {
         label: `${ctx.juris.stateName} State (resident)`, juris: ctx.juris.stateCode, pillClass: 'pill-vest',
-        taxable: ctx.fullIncome, rate: ctx.juris.stateRate,
+        taxable: ctx.fullIncome, rate,
         tax: grossTax, credit
       };
     }
@@ -1851,9 +1858,12 @@ const TaxComponentRegistry = [
       const qp = ctx.juris.qualifiedPlans[ctx.award.id];
       const rate = (qp && qp.rate !== undefined) ? qp.rate : ctx.juris.countryIncomeRate;
       const grossTax = ctx.fullIncome * rate;
-      const sourcedIncome = ctx.fullIncome - ctx.allocatedIncome;
-      const sourceTax = ctx.sourceForeignIncomeTax || 0;
-      const credit = Math.min(sourceTax, sourcedIncome * rate);
+      // Per-leg foreign tax credit (mirrors per-state credit logic)
+      const legs = ctx.sourceForeignLegs || [];
+      const credit = legs.reduce(
+        (sum, leg) => sum + Math.min(leg.tax, leg.allocatedIncome * rate),
+        0
+      );
       return {
         label: `${ctx.juris.countryName} Income (resident)${qp ? ` — ${qp.name}` : ''}`,
         juris: ctx.juris.shortCode, pillClass: 'pill-vest',
@@ -3129,6 +3139,9 @@ const CalcEngine = {
     const taxResults = [];
     let allSourceStateTax = 0;
     let allSourceForeignTax = 0;
+    // Per-leg breakdown so resident-state credit can apply the per-state cap correctly
+    const sourceStateLegs = [];   // { tax, allocatedIncome }
+    const sourceForeignLegs = []; // { tax, allocatedIncome }
 
     for (let i = 0; i < legs.length - 1; i++) {
       const leg = legs[i];
@@ -3146,27 +3159,35 @@ const CalcEngine = {
           juris: leg.juris, scope: 'source', inputs, award, fullIncome: income.ordinaryIncome,
           allocatedIncome: legAllocatedIncome, sourceStateTax: 0, sourceForeignIncomeTax: 0
         });
-        taxResults.push({ ...result, scope: 'source', allocPct: legAllocPct, legIndex: i });
+        taxResults.push({ ...result, scope: 'source', allocPct: legAllocPct, legIndex: i, legDays: leg.days });
 
         // Accumulate source taxes for credit
-        if (leg.juris.isUS && result.juris === leg.juris.stateCode) allSourceStateTax += result.tax;
-        if (!leg.juris.isUS && result.label.includes('Income')) allSourceForeignTax += result.tax;
+        if (leg.juris.isUS && result.juris === leg.juris.stateCode) {
+          allSourceStateTax += result.tax;
+          sourceStateLegs.push({ tax: result.tax, allocatedIncome: legAllocatedIncome });
+        }
+        if (!leg.juris.isUS && result.label.includes('Income')) {
+          allSourceForeignTax += result.tax;
+          sourceForeignLegs.push({ tax: result.tax, allocatedIncome: legAllocatedIncome });
+        }
       }
     }
 
     // 8. Phase B: Resident + full scopes for resident jurisdiction
     const residentAllocPct = perLeg[perLeg.length - 1];
     const residentAllocatedIncome = income.ordinaryIncome * residentAllocPct;
+    const residentLegDays = legs[legs.length - 1].days;
     const scopesForResident = ['resident', 'full'];
 
     for (const scope of scopesForResident) {
       for (const comp of TaxComponentRegistry) {
-        if (!comp.applies({ juris: residentJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: residentAllocatedIncome, sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax })) continue;
+        if (!comp.applies({ juris: residentJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: residentAllocatedIncome, sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax, sourceStateLegs, sourceForeignLegs })) continue;
         const result = comp.compute({
           juris: residentJuris, scope, inputs, award, fullIncome: income.ordinaryIncome, allocatedIncome: residentAllocatedIncome,
-          sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax
+          sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax,
+          sourceStateLegs, sourceForeignLegs
         });
-        taxResults.push({ ...result, scope, allocPct: residentAllocPct, legIndex: legs.length - 1 });
+        taxResults.push({ ...result, scope, allocPct: residentAllocPct, legIndex: legs.length - 1, legDays: residentLegDays });
       }
     }
 
@@ -3238,7 +3259,8 @@ const CalcEngine = {
 
 // Formatting helpers (reduce code duplication)
 function formatCurrency(amount) {
-  return '$' + amount.toLocaleString();
+  const rounded = Math.round(amount || 0);
+  return '$' + rounded.toLocaleString('en-US');
 }
 
 function formatPercentage(decimal, digits = 1) {
@@ -3996,11 +4018,30 @@ function renderTaxTable(taxResults) {
   const tbody = document.getElementById('tax-tbody');
   tbody.innerHTML = '';
 
+  const totalVestDays = getVestingPeriodDays();
+
   for (const r of taxResults) {
     const row = document.createElement('tr');
     row.className = r.scope === 'capital_gain' ? 'future-row' : '';
+
+    // Allocation column rules:
+    //   source   → leg's alloc% (matches taxable: alloc × full income)
+    //   resident → 100% (resident state taxes worldwide income; days shown for context)
+    //   full / capital_gain / fica / fed → blank (always 100% of income, mobility-independent)
+    let allocCell = '<span style="color:var(--text-subtle)">—</span>';
+    if (r.scope === 'source' && r.legDays != null && totalVestDays > 0) {
+      const pct = (r.allocPct * 100).toFixed(2);
+      allocCell = `<span style="font-variant-numeric:tabular-nums">${pct}%</span>
+                   <div style="font-size:10px;color:var(--text-subtle)">${Math.round(r.legDays)} / ${Math.round(totalVestDays)} days</div>`;
+    } else if (r.scope === 'resident' && r.legDays != null && totalVestDays > 0) {
+      const pct = (r.allocPct * 100).toFixed(2);
+      allocCell = `<span style="font-variant-numeric:tabular-nums">100%</span>
+                   <div style="font-size:10px;color:var(--text-subtle)">${Math.round(r.legDays)} / ${Math.round(totalVestDays)} days as resident</div>`;
+    }
+
     row.innerHTML = `
       <td><span class="juris-pill ${r.pillClass}">${r.juris}</span> ${r.label}</td>
+      <td class="right">${allocCell}</td>
       <td class="right">${r.taxable > 0 ? formatCurrency(r.taxable) : '—'}</td>
       <td class="right">${r.rate > 0 ? formatPercentage(r.rate) : '—'}</td>
       <td class="right">${r.tax > 0 ? formatCurrency(r.tax) : '—'}</td>
@@ -4018,6 +4059,7 @@ function renderTaxTable(taxResults) {
   totalRow.className = 'total-row';
   totalRow.innerHTML = `
     <td><strong>Total</strong></td>
+    <td class="right">—</td>
     <td class="right">—</td>
     <td class="right">—</td>
     <td class="right">${formatCurrency(totalGross)}</td>
