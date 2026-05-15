@@ -1280,6 +1280,15 @@ body.mode-projection .concept-banner { display: none !important; }
             </table>
           </div>
 
+          <div class="advanced-only" id="withholding-section" style="margin-top:18px">
+            <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:4px">Employer Withholding (Paycheck Impact)</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
+              What your company actually withholds at vest/exercise — IRS Pub 15 supplemental rates.
+              This is <em>not</em> your final liability; reconcile on Form 1040.
+            </div>
+            <div id="withholding-container"></div>
+          </div>
+
           <div class="advanced-only">
             <div style="font-family:'DM Serif Display',serif;font-size:15px;margin-bottom:8px">Cash Flow Waterfall</div>
             <div id="waterfall-container"></div>
@@ -1520,6 +1529,63 @@ function computeAMTExemption(filingStatus, amtBase) {
 
 // Additional Medicare / NIIT threshold by filing status
 const ADDL_MEDICARE_THRESHOLD = { single: 200000, mfj: 250000, mfs: 125000, hoh: 200000 };
+
+// 2025 Standard Deduction by filing status
+const STD_DEDUCTION_2025 = { single: 15000, mfj: 30000, mfs: 15000, hoh: 22500 };
+
+// Apply standard deduction: YTD wages absorb first, then equity absorbs remainder.
+// Returns { ytdTaxable, equityTaxable } in dollars after deduction.
+function applyStandardDeduction(ytdIncome, equityIncome, filingStatus) {
+  const ded = STD_DEDUCTION_2025[filingStatus] || 0;
+  const ytdTaxable = Math.max(0, ytdIncome - ded);
+  const remainingDed = Math.max(0, ded - ytdIncome);
+  const equityTaxable = Math.max(0, equityIncome - remainingDed);
+  return { ytdTaxable, equityTaxable, deductionApplied: ded };
+}
+
+// 2025 Supplemental withholding rates (IRS Pub 15)
+const FED_SUPPLEMENTAL_RATE_LOW  = 0.22;   // up to $1M cumulative supplemental
+const FED_SUPPLEMENTAL_RATE_HIGH = 0.37;   // amount over $1M
+const FED_SUPPLEMENTAL_THRESHOLD = 1000000;
+
+// State supplemental wage rates (where state publishes a separate flat rate)
+const STATE_SUPPLEMENTAL_RATES = {
+  CA: 0.1023,   // 10.23% for stock options / bonuses (6.6% for other supp)
+  NY: 0.1170,   // 11.70%
+  NJ: 0.0497,   // varies; using base
+  CT: 0.0699,
+  MA: 0.0500,
+  PA: 0.0307,
+  GA: 0.0539,
+  IL: 0.0495,
+  OR: 0.08,
+  MN: 0.0625,
+  MD: 0.0575,
+  VA: 0.0575,
+  CO: 0.0440,
+  NC: 0.0425,
+  OH: 0.0350,
+  HI: 0.0725,
+};
+function getStateSupplementalRate(stateCode) {
+  if (!stateCode) return 0;
+  if (STATE_SUPPLEMENTAL_RATES[stateCode] != null) return STATE_SUPPLEMENTAL_RATES[stateCode];
+  // Fall back to top marginal if not specified
+  const s = JurisdictionRegistry.usStates[stateCode];
+  return s ? s.rate : 0;
+}
+
+// Tentative AMT helper (shared by us_amt and us_amt_credit_used)
+function computeTentativeAMT(ytd, equityFullIncome, filingStatus) {
+  const fs = filingStatus || 'single';
+  const p = AMT_2025[fs] || AMT_2025.single;
+  const amtIncome = ytd + equityFullIncome;
+  const exemption = computeAMTExemption(fs, amtIncome);
+  const amtBase = Math.max(0, amtIncome - exemption);
+  return amtBase <= p.inflection
+    ? amtBase * 0.26
+    : p.inflection * 0.26 + (amtBase - p.inflection) * 0.28;
+}
 
 /* =================================================================
    EQUITY TAX ENGINE v3 — PLUGIN ARCHITECTURE
@@ -1938,19 +2004,12 @@ const TaxComponentRegistry = [
     applies: (ctx) => ctx.award.id === 'ISO' && ctx.scope === 'full' && ctx.juris.isUS,
     compute: (ctx) => {
       const spread = ctx.fullIncome;
-      const fs = ctx.inputs.filingStatus || 'single';
+      const fs  = ctx.inputs.filingStatus || 'single';
       const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
-      const amtParams = AMT_2025[fs] || AMT_2025.single;
-      const amtIncome = ytd + spread;
-      const exemption = computeAMTExemption(fs, amtIncome);
-      const amtBase = Math.max(0, amtIncome - exemption);
-      // Two AMT rates: 26% up to inflection point, 28% above
-      const amtTax = amtBase <= amtParams.inflection
-        ? amtBase * 0.26
-        : amtParams.inflection * 0.26 + (amtBase - amtParams.inflection) * 0.28;
+      const tentativeAMT = computeTentativeAMT(ytd, spread, fs);
       const bands = calcBracketBreakdown(ytd, spread, fs);
       const regularTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
-      const netAMT = Math.max(0, amtTax - regularTax);
+      const netAMT = Math.max(0, tentativeAMT - regularTax);
       return {
         label: 'AMT (Alternative Minimum Tax)', juris: 'AMT', pillClass: 'pill-amt',
         taxable: spread, rate: netAMT > 0 ? netAMT / spread : 0, tax: netAMT, credit: 0
@@ -1968,10 +2027,79 @@ const TaxComponentRegistry = [
       const fs  = ctx.inputs.filingStatus || 'single';
       const bands = calcBracketBreakdown(ytd, ctx.fullIncome, fs);
       const usFedTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
-      const credit = Math.min(foreignIncomeTax, usFedTax);
+      // §904 limitation: FTC ≤ (foreign source income / total income) × US tax on that income.
+      // General basket only (equity comp is general). Applied to the equity slice.
+      const foreignSourceIncome = (ctx.sourceForeignLegs || [])
+        .reduce((s, l) => s + l.allocatedIncome, 0);
+      const limitRatio = ctx.fullIncome > 0
+        ? Math.min(1, foreignSourceIncome / ctx.fullIncome)
+        : 0;
+      const ftcLimit = usFedTax * limitRatio;
+      const credit = Math.min(foreignIncomeTax, ftcLimit);
       return {
-        label: 'Federal Foreign Tax Credit', juris: 'FTC', pillClass: 'pill-cap',
+        label: 'Federal Foreign Tax Credit (§904)', juris: 'FTC', pillClass: 'pill-cap',
         taxable: 0, rate: 0, tax: 0, credit
+      };
+    }
+  },
+  // AMT credit carryforward (Form 8801): usable in years when regular tax > tentative AMT.
+  // The carryforward is the AMT paid in prior years; it can offset current-year regular
+  // tax dollar-for-dollar, but only up to (regularTax − tentativeAMT).
+  {
+    id: 'us_amt_credit_used',
+    label: 'AMT Credit (Form 8801)',
+    pillClass: 'pill-amt',
+    applies: (ctx) => {
+      if (ctx.scope !== 'full' || !ctx.juris.isUS) return false;
+      if (!((ctx.inputs.amtCreditCarryforward || 0) > 0)) return false;
+      const fs  = ctx.inputs.filingStatus || 'single';
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const tentativeAMT = computeTentativeAMT(ytd, ctx.fullIncome, fs);
+      const bands = calcBracketBreakdown(ytd, ctx.fullIncome, fs);
+      const regularTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
+      return regularTax > tentativeAMT;
+    },
+    compute: (ctx) => {
+      const fs  = ctx.inputs.filingStatus || 'single';
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      const tentativeAMT = computeTentativeAMT(ytd, ctx.fullIncome, fs);
+      const bands = calcBracketBreakdown(ytd, ctx.fullIncome, fs);
+      const regularTax = bands.reduce((s, b) => s + b.exercise * b.rate, 0);
+      const cf = ctx.inputs.amtCreditCarryforward || 0;
+      const maxUsable = Math.max(0, regularTax - tentativeAMT);
+      const used = Math.min(cf, maxUsable);
+      return {
+        label: `AMT Credit Used (Form 8801, ${formatCurrency(cf)} carryforward)`,
+        juris: 'AMT', pillClass: 'pill-amt',
+        taxable: 0, rate: 0, tax: 0, credit: used
+      };
+    }
+  },
+  // CA Mental Health Services Tax (Prop 63): 1% on California taxable income > $1M.
+  // Applies to CA residents on worldwide income and to non-residents on CA-source income.
+  {
+    id: 'ca_mht',
+    label: 'CA Mental Health Tax (Prop 63)',
+    pillClass: 'pill-vest',
+    applies: (ctx) => {
+      if (!ctx.juris.isUS || ctx.juris.stateCode !== 'CA') return false;
+      if (ctx.scope !== 'resident' && ctx.scope !== 'source') return false;
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      return (ytd + ctx.fullIncome) > 1000000;
+    },
+    compute: (ctx) => {
+      const ytd = ctx.inputs.stackedYTDOrdinary || ctx.inputs.ytdIncome || 0;
+      // For resident scope, CA taxes full income; for source scope, only the allocated portion.
+      const caTaxableBase = ctx.scope === 'resident' ? ctx.fullIncome : ctx.allocatedIncome;
+      const totalIncome = ytd + ctx.fullIncome;
+      // Excess over $1M attributable to this equity event (caps the excess at caTaxableBase)
+      const excessAboveMillion = Math.max(0, totalIncome - 1000000);
+      const taxable = Math.min(caTaxableBase, excessAboveMillion);
+      const labelPrefix = ctx.scope === 'source' ? '⬆ ' : '';
+      return {
+        label: `${labelPrefix}CA Mental Health Tax (1% > $1M)`,
+        juris: 'CA', pillClass: ctx.scope === 'source' ? 'pill-grant' : 'pill-vest',
+        taxable, rate: 0.01, tax: taxable * 0.01
       };
     }
   }
@@ -3715,16 +3843,18 @@ function getCurrentAward() {
   return AwardRegistry[cachedAwardId] || AwardRegistry.NQ;
 }
 
-// Calculate which brackets income falls into
+// Calculate which brackets income falls into.
+// Applies the standard deduction (YTD absorbs first, then equity) before stacking into brackets.
 function calcBracketBreakdown(ytdIncome, exerciseIncome, filingStatus = 'single') {
+  const { ytdTaxable, equityTaxable } = applyStandardDeduction(ytdIncome, exerciseIncome, filingStatus);
   const bands = [];
   let prev = 0;
-  const total = ytdIncome + exerciseIncome;
+  const total = ytdTaxable + equityTaxable;
   for (const bracket of getBrackets(filingStatus)) {
     const bandTop = Math.min(bracket.upTo, total);
     const width = bandTop - prev;
     if (width <= 0) break;
-    const ytdInBand = Math.max(0, Math.min(ytdIncome, bandTop) - prev);
+    const ytdInBand = Math.max(0, Math.min(ytdTaxable, bandTop) - prev);
     const exInBand = width - ytdInBand;
     if (ytdInBand > 0 || exInBand > 0) {
       bands.push({ rate: bracket.rate, ytd: ytdInBand, exercise: exInBand });
@@ -3839,6 +3969,9 @@ function calc() {
 
   // Render simple summary (only visible in simple mode)
   renderSimpleSummary(result);
+
+  // Render employer withholding view (IRS Pub 15 supplemental)
+  renderWithholding(inputs, result);
 
   // Re-render tax rates section (brackets change with filing status)
   renderTaxRatesSection();
@@ -4014,6 +4147,149 @@ function renderSummaryCards(result) {
 }
 
 // Render tax table
+// Compute supplemental withholding at vest/exercise (employer-side paycheck math).
+// Equity income is treated as supplemental wages — IRS Pub 15.
+function computeWithholding(inputs, result) {
+  const equityIncome = result.income.ordinaryIncome;
+  if (equityIncome <= 0) return null;
+
+  const ytdSupp = inputs.ytdEquityIncome || 0;
+  const ytdSSWages = inputs.ytdSSWages || inputs.ytdIncome || 0;
+  const ytdOrdinary = inputs.stackedYTDOrdinary || inputs.ytdIncome || 0;
+
+  // ---- Federal supplemental withholding ----
+  // 22% up to $1M cumulative supplemental, 37% on excess.
+  const roomAt22 = Math.max(0, FED_SUPPLEMENTAL_THRESHOLD - ytdSupp);
+  const at22 = Math.min(equityIncome, roomAt22);
+  const at37 = equityIncome - at22;
+  const fedWH = at22 * FED_SUPPLEMENTAL_RATE_LOW + at37 * FED_SUPPLEMENTAL_RATE_HIGH;
+
+  // ---- State supplemental withholding (resident state) ----
+  const residentJuris = result.vestJuris;
+  let stateWH = 0;
+  let stateLabel = '';
+  let stateRate = 0;
+  if (residentJuris && residentJuris.isUS && residentJuris.stateCode) {
+    stateRate = getStateSupplementalRate(residentJuris.stateCode);
+    stateWH = equityIncome * stateRate;
+    stateLabel = `${residentJuris.stateName} (${residentJuris.stateCode})`;
+  }
+
+  // ---- FICA ----
+  const skipFICA = result.award.skipFICA;
+  const ssRoom = Math.max(0, 176100 - ytdSSWages);
+  const ssTaxable = skipFICA ? 0 : Math.min(equityIncome, ssRoom);
+  const ssWH = ssTaxable * 0.062;
+  const medicareWH = skipFICA ? 0 : equityIncome * 0.0145;
+  // Additional Medicare uses single-employer $200K threshold (not filing status).
+  // Employer doesn't know your filing status; withholds on > $200K from this employer.
+  const addlMedicareBase = Math.max(0, (ytdOrdinary + equityIncome) - Math.max(ytdOrdinary, 200000));
+  const addlMedicareWH = skipFICA ? 0 : addlMedicareBase * 0.009;
+
+  const totalWH = fedWH + stateWH + ssWH + medicareWH + addlMedicareWH;
+  const netToEmployee = equityIncome - totalWH;
+
+  return {
+    equityIncome,
+    fedWH,
+    fedRate: at37 > 0 ? 'mixed (22% / 37%)' : '22%',
+    fedAt22: at22,
+    fedAt37: at37,
+    stateLabel,
+    stateRate,
+    stateWH,
+    ssWH,
+    medicareWH,
+    addlMedicareWH,
+    totalWH,
+    netToEmployee,
+    effectiveWHRate: totalWH / equityIncome,
+    skipFICA
+  };
+}
+
+function renderWithholding(inputs, result) {
+  const container = document.getElementById('withholding-container');
+  if (!container) return;
+  const w = computeWithholding(inputs, result);
+  if (!w) { container.innerHTML = ''; return; }
+
+  const fmtPctW = r => (r * 100).toFixed(2) + '%';
+  const row = (label, sub, rate, amount, isTotal) => `
+    <tr ${isTotal ? 'style="background:var(--bg-soft);font-weight:600"' : ''}>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border-subtle)">
+        ${label}${sub ? `<div style="font-size:10px;color:var(--text-subtle);font-weight:400">${sub}</div>` : ''}
+      </td>
+      <td style="padding:8px 12px;text-align:right;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums;color:var(--text-muted)">${rate}</td>
+      <td style="padding:8px 12px;text-align:right;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">${amount}</td>
+    </tr>`;
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    <thead>
+      <tr style="background:var(--bg-soft)">
+        <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted)">Component</th>
+        <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted)">Rate</th>
+        <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted)">Withheld</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  html += row(
+    'Federal Supplemental',
+    w.fedAt37 > 0 ? `${formatCurrency(w.fedAt22)} @ 22% + ${formatCurrency(w.fedAt37)} @ 37%` : 'Flat 22% (under $1M cumulative)',
+    w.fedRate,
+    formatCurrency(w.fedWH)
+  );
+
+  if (w.stateLabel) {
+    html += row(
+      `${w.stateLabel} Supplemental`,
+      'State supplemental wage rate',
+      fmtPctW(w.stateRate),
+      formatCurrency(w.stateWH)
+    );
+  }
+
+  if (!w.skipFICA) {
+    html += row('Social Security', 'Capped at $176,100 of wages', '6.20%', formatCurrency(w.ssWH));
+    html += row('Medicare', 'No cap', '1.45%', formatCurrency(w.medicareWH));
+    if (w.addlMedicareWH > 0) {
+      html += row(
+        'Additional Medicare',
+        'Employer withholds on wages > $200K from this employer',
+        '0.90%', formatCurrency(w.addlMedicareWH)
+      );
+    }
+  } else {
+    html += `<tr><td colspan="3" style="padding:8px 12px;color:var(--text-muted);font-style:italic;border-bottom:1px solid var(--border-subtle)">FICA skipped (ISO exercise)</td></tr>`;
+  }
+
+  html += row(
+    `Total Withheld`,
+    `Equity income: ${formatCurrency(w.equityIncome)} → Net to employee: <strong style="color:var(--success)">${formatCurrency(w.netToEmployee)}</strong>`,
+    fmtPctW(w.effectiveWHRate),
+    `<strong>${formatCurrency(w.totalWH)}</strong>`,
+    true
+  );
+
+  html += `</tbody></table>`;
+
+  // Reconciliation note vs. final liability
+  const wYearLiability = result.totalTax;
+  const diff = w.totalWH - wYearLiability;
+  if (Math.abs(diff) > 100) {
+    const direction = diff > 0
+      ? `Over-withholding of <strong style="color:var(--success)">${formatCurrency(diff)}</strong> — likely refund at tax-filing time.`
+      : `Under-withholding of <strong style="color:var(--danger)">${formatCurrency(-diff)}</strong> — likely balance due. Consider Q4 estimated payment.`;
+    html += `<div style="margin-top:8px;font-size:12px;color:var(--text-muted);padding:8px 12px;background:var(--bg-soft);border-radius:8px">
+      <strong>Reconciliation:</strong> Withholding ${formatCurrency(w.totalWH)} vs. year-end liability on this event ${formatCurrency(wYearLiability)}.
+      ${direction}
+    </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
 function renderTaxTable(taxResults) {
   const tbody = document.getElementById('tax-tbody');
   tbody.innerHTML = '';
@@ -4126,13 +4402,17 @@ function renderBracketViz(result, inputs) {
   const wrap = document.getElementById('bracket-viz-wrap');
   if (!wrap) return;
 
-  const ytdIncome      = inputs.stackedYTDOrdinary || inputs.ytdIncome || 0;
-  const exerciseIncome = result.income.ordinaryIncome;
+  const ytdGross       = inputs.stackedYTDOrdinary || inputs.ytdIncome || 0;
+  const exerciseGross  = result.income.ordinaryIncome;
   const fs             = inputs.filingStatus || 'single';
 
-  if (exerciseIncome === 0) { wrap.innerHTML = ''; return; }
+  if (exerciseGross === 0) { wrap.innerHTML = ''; return; }
 
-  const totalIncome = ytdIncome + exerciseIncome;
+  // Apply standard deduction so visualization matches actual tax math
+  const { ytdTaxable, equityTaxable, deductionApplied } = applyStandardDeduction(ytdGross, exerciseGross, fs);
+  const ytdIncome      = ytdTaxable;
+  const exerciseIncome = equityTaxable;
+  const totalIncome    = ytdIncome + exerciseIncome;
   const rateStr = r => (r * 100).toFixed(0) + '%';
   const TOP_CAP = 800000;
 
@@ -4214,9 +4494,10 @@ function renderBracketViz(result, inputs) {
 
   html += `</tbody></table>`;
 
-  html += `<div style="display:flex;gap:24px;font-size:13px;color:var(--text-muted)">
+  html += `<div style="display:flex;gap:24px;font-size:13px;color:var(--text-muted);flex-wrap:wrap">
     <div>Marginal rate: <strong style="color:var(--accent-text)">${marginalBand ? rateStr(marginalBand.rate) : '—'}</strong></div>
     <div>Effective rate on equity: <strong style="color:var(--text)">${(effectiveRate * 100).toFixed(1)}%</strong></div>
+    <div>Standard deduction applied: <strong style="color:var(--text)">${formatCurrency(deductionApplied)}</strong></div>
   </div>`;
 
   wrap.innerHTML = html;
