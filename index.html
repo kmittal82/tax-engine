@@ -1750,11 +1750,22 @@ const SourcingStrategyRegistry = {
     }
   },
 
-  // 83(b) election: single point at grant
+  // 83(b) election (and other grant-time recognition events): single point at grant.
+  // 100% of income is sourced to the participant's location on grant date — i.e. the
+  // first mobility leg. All subsequent legs (mobility after grant) get 0% because no
+  // workday-based allocation applies; the income event has already occurred.
+  // residentLegIndex: 0 because the resident-state tax obligation arises at grant —
+  // any later state the employee moves to has no claim on this income.
   pointInTimeGrant: {
     name: 'Point-in-Time at Grant',
     description: 'Income recognized entirely at grant date (83(b) election)',
-    compute() { return { grant: 1.0, vest: 0.0 }; }
+    compute(inputs) {
+      if (inputs.mobility?.length >= 2) {
+        const perLeg = inputs.mobility.map((_, i) => (i === 0 ? 1.0 : 0.0));
+        return { grant: 1.0, vest: 0.0, perLeg, residentLegIndex: 0 };
+      }
+      return { grant: 1.0, vest: 0.0, residentLegIndex: 0 };
+    }
   },
 
   // ESPP: typically sourced to where employee was during contribution period
@@ -2200,11 +2211,20 @@ const AwardRegistry = {
         return { ordinaryIncome: spread, capitalGain: 0, exerciseCost, proceeds };
       }
     },
-    extraRules(inputs) {
-      if (inputs.isoDisposition === 'qualifying') {
-        return ['ISO qualifying disposition: entire spread treated as long-term capital gain at federal LTCG rate. Most states follow federal treatment.'];
+    extraRules(inputs, grantJuris) {
+      const rules = [];
+      // §422 requires the optionee be an employee of a US corporation at grant.
+      // A non-US grant location strongly suggests the ISO is invalid and the award
+      // should be taxed as a non-qualified option (ordinary income at exercise + FICA).
+      if (grantJuris && !grantJuris.isUS) {
+        rules.push(`⚠️ §422 ELIGIBILITY ISSUE: ISO grant requires US-employee status at grant. This grant was sourced to ${grantJuris.displayName} (non-US). The award likely fails §422 — should be treated as NQ (ordinary income at exercise, FICA applies, no AMT preference).`);
       }
-      return ['ISO disqualifying disposition: spread treated as ordinary income (same as NQ but no FICA). AMT may still apply for the holding-period spread.'];
+      if (inputs.isoDisposition === 'qualifying') {
+        rules.push('ISO qualifying disposition: entire spread treated as long-term capital gain at federal LTCG rate. Most states follow federal treatment.');
+      } else {
+        rules.push('ISO disqualifying disposition: spread treated as ordinary income (same as NQ but no FICA). AMT may still apply for the holding-period spread.');
+      }
+      return rules;
     }
   },
 
@@ -3292,10 +3312,16 @@ const CalcEngine = {
     const allocation = sourcingStrategy.compute(inputs);
     const perLeg = allocation.perLeg || [allocation.grant, allocation.vest];
 
-    // 5. Determine resident jurisdiction (last leg)
-    const residentJuris = legs[legs.length - 1].juris;
+    // 5. Determine resident jurisdiction.
+    // Default is the last leg (workday accrual: residency-at-vest controls).
+    // Strategies like pointInTimeGrant declare residentLegIndex=0 — the resident
+    // for tax purposes is the location at the income-recognition event (grant for 83(b)).
+    const residentLegIdx = (allocation.residentLegIndex != null && legs[allocation.residentLegIndex])
+      ? allocation.residentLegIndex
+      : legs.length - 1;
+    const residentJuris = legs[residentLegIdx].juris;
     const grantJuris = legs[0].juris;
-    const vestJuris = residentJuris;
+    const vestJuris = legs[legs.length - 1].juris;
 
     // 6. Check if all legs are same jurisdiction
     const allSameJuris = legs.every(l => {
@@ -3312,9 +3338,10 @@ const CalcEngine = {
     const sourceStateLegs = [];   // { tax, allocatedIncome }
     const sourceForeignLegs = []; // { tax, allocatedIncome }
 
-    for (let i = 0; i < legs.length - 1; i++) {
+    for (let i = 0; i < legs.length; i++) {
+      if (i === residentLegIdx) continue;
       const leg = legs[i];
-      const legAllocPct = perLeg[i];
+      const legAllocPct = perLeg[i] ?? 0;
       const legAllocatedIncome = income.ordinaryIncome * legAllocPct;
 
       // Skip if leg jurisdiction == resident jurisdiction
@@ -3343,9 +3370,9 @@ const CalcEngine = {
     }
 
     // 8. Phase B: Resident + full scopes for resident jurisdiction
-    const residentAllocPct = perLeg[perLeg.length - 1];
+    const residentAllocPct = perLeg[residentLegIdx] ?? 0;
     const residentAllocatedIncome = income.ordinaryIncome * residentAllocPct;
-    const residentLegDays = legs[legs.length - 1].days;
+    const residentLegDays = legs[residentLegIdx].days;
     const scopesForResident = ['resident', 'full'];
 
     for (const scope of scopesForResident) {
@@ -3356,7 +3383,7 @@ const CalcEngine = {
           sourceStateTax: allSourceStateTax, sourceForeignIncomeTax: allSourceForeignTax,
           sourceStateLegs, sourceForeignLegs
         });
-        taxResults.push({ ...result, scope, allocPct: residentAllocPct, legIndex: legs.length - 1, legDays: residentLegDays });
+        taxResults.push({ ...result, scope, allocPct: residentAllocPct, legIndex: residentLegIdx, legDays: residentLegDays });
       }
     }
 
