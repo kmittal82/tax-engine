@@ -984,6 +984,10 @@ body.mode-projection .concept-banner { display: none !important; }
         <input type="date" id="grant-date" oninput="onGrantDateChange()">
       </div>
       <div class="timeline-field">
+        <label>Vest Start Date <span class="helper" style="font-size:10px;color:var(--text-subtle)">(if different from grant)</span></label>
+        <input type="date" id="vest-start-date" oninput="onVestStartDateChange()">
+      </div>
+      <div class="timeline-field">
         <label>Vesting Schedule</label>
         <select id="vest-schedule" onchange="onVestScheduleChange()">
           <option value="4y1c">4-yr / 1-yr cliff</option>
@@ -2537,16 +2541,24 @@ function daysBetween(fromISO, toISO) {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
+// Vest start date is the actual vesting commencement; falls back to grant date.
+// Workday sourcing allocation uses vest-start → vest-end, not grant → vest-end.
+function getVestStartDate() {
+  return document.getElementById('vest-start-date')?.value
+      || document.getElementById('grant-date')?.value
+      || '';
+}
+
 function computeVestEndDate() {
-  const gd = document.getElementById('grant-date').value;
+  const start = getVestStartDate();
   const sched = document.getElementById('vest-schedule').value;
-  if (!gd) return '';
+  if (!start) return '';
   const cfg = VEST_SCHEDULES[sched];
   if (!cfg) {
     const y = parseInt(document.getElementById('vest-years-custom').value) || 4;
-    return addYears(gd, y);
+    return addYears(start, y);
   }
-  return addYears(gd, cfg.years);
+  return addYears(start, cfg.years);
 }
 
 function updateVestEndDisplay() {
@@ -2557,9 +2569,34 @@ function updateVestEndDisplay() {
 
 function onGrantDateChange() {
   grantDate = document.getElementById('grant-date').value;
-  // Update first row fromDate
-  if (mobilityRows.length > 0 && !mobilityRows[0].fromDate) {
+  // If vest-start is blank, the sourcing window pivots off grant date — propagate to row 0.
+  const vsd = document.getElementById('vest-start-date')?.value;
+  if (!vsd && mobilityRows.length > 0 && !mobilityRows[0].fromDate) {
     mobilityRows[0].fromDate = grantDate;
+  }
+  updateVestEndDisplay();
+  renderVestingScheduleBreakdown();
+  renderMobilityTable();
+  calc();
+}
+
+function onVestStartDateChange() {
+  const vsd = document.getElementById('vest-start-date').value;
+  // Anchor the first mobility row to vest-start (sourcing window begins here).
+  if (vsd && mobilityRows.length > 0) {
+    mobilityRows[0].fromDate = vsd;
+    if (mobilityRows[0].toDate) {
+      mobilityRows[0].days = Math.max(1, daysBetween(vsd, mobilityRows[0].toDate));
+    }
+  }
+  // Vest end shifts with vest-start too — re-anchor last row.
+  const vestEnd = computeVestEndDate();
+  if (vestEnd && mobilityRows.length > 0) {
+    mobilityRows[mobilityRows.length - 1].toDate = vestEnd;
+    const lastRow = mobilityRows[mobilityRows.length - 1];
+    if (lastRow.fromDate) {
+      lastRow.days = Math.max(1, daysBetween(lastRow.fromDate, vestEnd));
+    }
   }
   updateVestEndDisplay();
   renderVestingScheduleBreakdown();
@@ -2608,12 +2645,13 @@ function onVestingInputChange() {
 }
 
 function computeVestingSchedule() {
-  const gd = document.getElementById('grant-date').value;
+  // Tranche dates anchor off vest-start-date (vesting commencement), not grant date.
+  const start = getVestStartDate();
   const sched = document.getElementById('vest-schedule').value;
   // Read units from award-specific 'shares' field
   const units = parseFloat(document.getElementById('shares')?.value) || 0;
 
-  if (!gd || units <= 0) return [];
+  if (!start || units <= 0) return [];
 
   const events = [];
 
@@ -2622,37 +2660,37 @@ function computeVestingSchedule() {
       // 4 equal annual tranches; first one is cliff at year 1
       const u = units / 4;
       for (let yr = 1; yr <= 4; yr++)
-        events.push({ date: addYears(gd, yr), units: u, isCliff: yr === 1 });
+        events.push({ date: addYears(start, yr), units: u, isCliff: yr === 1 });
       break;
     }
     case '3y1c': {
       const u = units / 3;
       for (let yr = 1; yr <= 3; yr++)
-        events.push({ date: addYears(gd, yr), units: u, isCliff: yr === 1 });
+        events.push({ date: addYears(start, yr), units: u, isCliff: yr === 1 });
       break;
     }
     case '2y6c': {
       // 4 equal tranches every 6 months; first one is the cliff
       const u = units / 4;
       for (let i = 1; i <= 4; i++)
-        events.push({ date: addMonths(gd, i * 6), units: u, isCliff: i === 1 });
+        events.push({ date: addMonths(start, i * 6), units: u, isCliff: i === 1 });
       break;
     }
     case '4y': {
       const u = units / 4;
       for (let yr = 1; yr <= 4; yr++)
-        events.push({ date: addYears(gd, yr), units: u });
+        events.push({ date: addYears(start, yr), units: u });
       break;
     }
     case 'cliff': {
-      events.push({ date: addYears(gd, 1), units, isCliff: true });
+      events.push({ date: addYears(start, 1), units, isCliff: true });
       break;
     }
     case 'custom': {
       const customYears = parseInt(document.getElementById('vest-years-custom').value) || 4;
       const u = units / customYears;
       for (let yr = 1; yr <= customYears; yr++)
-        events.push({ date: addYears(gd, yr), units: u });
+        events.push({ date: addYears(start, yr), units: u });
       break;
     }
   }
@@ -2921,9 +2959,12 @@ function renderTaxRatesSection() {
 // =====================================================
 
 function getVestingPeriodDays() {
-  const gd = document.getElementById('grant-date').value;
+  // Workday allocation denominator is the vesting window (vest-start → vest-end),
+  // not the grant-to-vest window. Grant date is administrative; vest commencement
+  // is when the sourcing period actually begins.
+  const start = getVestStartDate();
   const vestEnd = computeVestEndDate();
-  if (gd && vestEnd) return Math.max(1, daysBetween(gd, vestEnd));
+  if (start && vestEnd) return Math.max(1, daysBetween(start, vestEnd));
   return mobilityRows.reduce((s, r) => s + (r.days || 0), 0) || 1;
 }
 
@@ -3429,6 +3470,7 @@ function applyState(state) {
     setSafe('grant-date', state.grantDate);
     grantDate = state.grantDate;
   }
+  if (state.vestStartDate) setSafe('vest-start-date', state.vestStartDate);
   if (state.vestSchedule) setSafe('vest-schedule', state.vestSchedule);
   if (state.grantUnits != null) setSafe('shares', state.grantUnits);
   if (state.grantFMV != null) setSafe('fmv', state.grantFMV);
@@ -3576,6 +3618,8 @@ function init() {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('grant-date').value = today;
   grantDate = today;
+  // Vest start date is left blank by default — falls back to grant date in helpers.
+  // Users override this for PSUs / off-cycle grants where vest commencement ≠ grant.
   document.getElementById('vest-schedule').value = '4y1c';
 
   // Set default mobility dates
@@ -3869,6 +3913,7 @@ function getInputs() {
   const inputs = {
     awardType: getCurrentAward().id,
     grantDate: document.getElementById('grant-date').value || '',
+    vestStartDate: document.getElementById('vest-start-date')?.value || '',
     vestSchedule: document.getElementById('vest-schedule').value || '4y1c',
     grantUnits: parseFloat(document.getElementById('shares')?.value) || 0,
     grantFMV: parseFloat(document.getElementById('fmv')?.value) || 0,
